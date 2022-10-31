@@ -43,25 +43,30 @@
 % World information
 % -----------------
 
-position(agent, (1, 1)).
+dir(north).
+dir(east).
+dir(south).
+dir(west).
 
-minX(0). maxX(12).
-minY(0). maxY(12).
+facing(east).
 
-adjacent((X, Y1), (X, Y2)) :-
+minX(1). maxX(12).
+minY(1). maxY(12).
+
+adjacent((X, Y1), (X, Y2), south) :-
     Y2 is Y1 - 1,
     valid_position((X, Y2)).
-adjacent((X, Y1), (X, Y2)) :-
+adjacent((X, Y1), (X, Y2), north) :-
     Y2 is Y1 + 1,
     valid_position((X, Y2)).
-adjacent((X1, Y), (X2, Y)) :-
+adjacent((X1, Y), (X2, Y), west) :-
     X2 is X1 - 1,
     valid_position((X2, Y)).
-adjacent((X1, Y), (X2, Y)) :-
+adjacent((X1, Y), (X2, Y), east) :-
     X2 is X1 + 1,
     valid_position((X2, Y)).
 
-valid_position(p(X, Y)) :-
+valid_position((X, Y)) :-
     minX(MinX), maxX(MaxX), between(MinX, MaxX, X),
     minY(MinY), maxY(MaxY), between(MinY, MaxY, Y).
 
@@ -75,6 +80,8 @@ valid_position(p(X, Y)) :-
 % 5. 4 teletransporting enemies
 % 6. 3 power ups
 % 7. Walls around the whole cave
+
+position(agent, (1, 1)).
 
 position(small_enemy, (2, 10)).
 position(small_enemy, (10, 2)).
@@ -123,10 +130,10 @@ sense_steps(steps) :-
     position(agent, AP),
     (
         position(small_enemy, SEP),
-        adjacent(AP, SEP)
+        adjacent(AP, SEP, _)
     ;
         position(large_enemy, LEP),
-        adjacent(AP, LEP)
+        adjacent(AP, LEP, _)
     ).
 sense_steps(no_steps).
 
@@ -135,7 +142,7 @@ sense_steps(no_steps).
 sense_breeze(breeze) :-
     position(agent, AP),
     position(pit, PP),
-    adjacent(AP, PP).
+    adjacent(AP, PP, _).
 sense_breeze(no_breeze).
 
 % sense_flash/1
@@ -143,7 +150,7 @@ sense_breeze(no_breeze).
 sense_flash(flash) :-
     position(agent, AP),
     position(teletransporter, TP),
-    adjacent(AP, TP).
+    adjacent(AP, TP, _).
 sense_flash(no_flash).
 
 % sense_glow/1
@@ -170,3 +177,125 @@ sense_scream(no_scream).
 update_position(NP) :-
     retractall(position(agent, _)),
     assertz(position(agent, NP)).
+
+step :-
+    sense_environment(Sensors),
+    update_knowledge(Sensors),
+    !.
+
+update_knowledge(Sensors) :-
+    Sensors = (Steps, Breeze, Flash, Glow, _, Scream),
+    update_steps(Steps),
+    update_breeze(Breeze),
+    update_flash(Flash),
+    update_glow(Glow),
+    update_scream(Scream).
+
+% update_steps/1
+update_steps(Steps) :-
+    position(agent, AP),
+    assertz(certain(Steps, AP)),
+    update_enemies(Steps).
+
+% update_enemies/1
+update_enemies(no_steps) :-
+    position(agent, AP),
+    assertz(certain(no_enemy, AP)),
+    adjacent(AP, P, _),
+    retractall(possible_position(small_enemy, P)),
+    retractall(possible_position(large_enemy, P)),
+    assertz(certain(no_enemy, P)),
+    fail.
+update_enemies(no_steps).
+
+update_enemies(steps) :-
+    update_small_enemies(steps),
+    update_large_enemies(steps).
+    % Take into account the maximum number of enemies and certainties to infer possibilities
+
+update_small_enemies(steps) :-
+    position(agent, AP),
+    adjacent(AP, P, _),
+    \+ certain(no_enemy, P),
+    assertz(possible_position(small_enemy, P)),
+    fail.
+update_small_enemies(steps).
+
+update_large_enemies(steps) :-
+    position(agent, AP),
+    adjacent(AP, P, _),
+    \+ certain(no_enemy, P),
+    assertz(possible_position(large_enemy, P)),
+    fail.
+update_large_enemies(steps).
+
+% update breeze/1
+update_breeze(Breeze) :-
+    position(agent, AP),
+    assertz(certain(Breeze, AP)),
+    update_pits(Breeze).
+
+update_pits(no_breeze) :-
+    position(agent, AP),
+    assertz(certain(no_pit, AP)),
+    adjacent(AP, P, _),
+    retractall(possible_position(pit, P)),
+    assertz(certain(no_pit, P)),
+    fail.
+update_pits(no_breeze).
+
+update_pits(_) :-
+    position(agent, AP),
+    adjacent(AP, P, _),
+    \+ certain(no_pit, P),
+    assertz(possible_position(pit, P)),
+    fail.
+update_pits(_).
+
+% update flash/1
+update_flash(Flash) :-
+    position(agent, AP),
+    assertz(certain(Flash, AP)),
+    update_teleporter(Flash).
+
+update_teleporter(no_flash) :-
+    position(agent, AP),
+    assertz(certain(no_teleporter, AP)),
+    adjacent(AP, P, _),
+    retractall(possible_position(teleporter, P)),
+    assertz(certain(no_teleporter, P)),
+    fail.
+update_teleporter(no_flash).
+
+update_teleporter(_) :-
+    position(agent, AP),
+    adjacent(AP, P, _),
+    \+ certain(no_teleporter, P),
+    assertz(possible_position(teleporter, P)),
+    fail.
+update_teleporter(_).
+
+% update_gold/1
+update_glow(Glow) :-
+    position(agent, AP),
+    assertz(certain(Glow, AP)),
+    update_gold(Glow).
+
+update_gold(glow) :-
+    position(agent, AP),
+    assertz(certain(gold, AP)).
+update_gold(_) :-
+    position(agent, AP),
+    assertz(certain(no_gold, AP)).
+
+% update_scream/1
+update_scream(no_scream).
+update_scream(scream) :-
+    position(agent, AP),
+    facing(Dir),
+    adjacent(AP, P, Dir),
+    retractall(possible_position(small_enemy, P)),
+    retractall(possible_position(large_enemy, P)),
+    retractall(possible_position(teleporter, P)),
+    assertz(certain(no_enemy, P)).
+    
