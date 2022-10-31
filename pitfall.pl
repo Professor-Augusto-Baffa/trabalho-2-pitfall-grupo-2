@@ -22,10 +22,13 @@
     hit_wall/0,
     killed_enemy/0,
     goal/1,
-    certain/2
+    certain/2,
+    collected/2
 ]).
 
 agent_position((1,1)).
+
+collected(gold, 0).
 
 %
 % World information
@@ -143,17 +146,24 @@ print_cave_element(power_up) :- write('U').
 % Observation and decision making
 % ----
 
-% sense_learn_act/0
-% Learns from the environment and acts accordingly
-sense_learn_act :-
-    sense_environment(Sensors),
+% sense_learn_act/2
+% sense_learn_act(-Goal, -Action)
+% Learns from the environment and acts accordingly, returning the current Goal and the Action it performed
+sense_learn_act(Goal, Action) :-
+    format('-----~n'),
+    sense_environment(Sensors), write_sensors(Sensors),
     clear_transient_flags,
+    format('Learning:~n'),
     update_knowledge(Sensors),
     update_goal,
-    next_action(Action),
+    goal(Goal),
+    next_action(Goal, Action),
+    write_goal_action(Goal, Action),
     perform_action(Action),
     !.
 
+write_goal_action(Goal, Action) :-
+    format('Goal = ~w~nAction = ~w~n', [Goal, Action]).
 
 % Sensors
 % -----
@@ -176,6 +186,13 @@ sense_environment(Sensors) :-
     sense_glow(Glow),
     sense_impact(Impact),
     sense_scream(Scream),
+    !.
+
+write_sensors(Sensors) :-
+    agent_position(AP),
+    world_position(agent, ActualAP),
+    facing(Dir),
+    format('Agent~n~t~2|at: ~w~n~t~2|sensing: ~w~nWorld~n~t~2|agent at: ~w~n~t~2|facing: ~w~n', [AP, Sensors, ActualAP, Dir]),
     !.
 
 % sense_steps/1
@@ -258,6 +275,11 @@ world_step :-
     % If invalid step, hit wall
     assertz(hit_wall).
 
+world_pick_up :-
+    % If on the same position as gold, remove gold from the world
+    world_position(agent, AP),
+    world_position(gold, AP),
+    retractall(world_position(gold, AP)).
 
 clear_transient_flags :-
     retractall(hit_wall),
@@ -280,7 +302,15 @@ update_knowledge(Sensors) :-
     update_breeze(Breeze),
     update_flash(Flash),
     update_glow(Glow),
-    update_scream(Scream).
+    update_scream(Scream),
+    set_visited_cell,
+    infer_dangerous_positions,
+    infer_safe_positions.
+
+set_visited_cell :-
+    agent_position(AP),
+    assertz(certain(visited, AP)),
+    format('~t~2|visited: ~w~n', [AP]).
 
 % update_steps/1
 % update_steps(+Steps)
@@ -294,14 +324,16 @@ update_steps(Steps) :-
 update_enemies(no_steps) :-
     agent_position(AP),
     learn(no_enemy, AP),
-    adjacent(AP, P, _), % Not checking valid_position because it is world knowledge
+    adjacent(AP, P, _),
+    maybe_valid_position(P),
     learn(no_enemy, P),
     fail.
 update_enemies(no_steps).
 
 update_enemies(steps) :-
     agent_position(AP),
-    adjacent(AP, P, _), % Not checking valid_position because it is world knowledge
+    adjacent(AP, P, _),
+    maybe_valid_position(P),
     \+ certain(no_enemy, P),
     assertz(possible_position(enemy, P)),
     fail.
@@ -319,14 +351,16 @@ update_breeze(Breeze) :-
 update_pits(no_breeze) :-
     agent_position(AP),
     learn(no_pit, AP),
-    adjacent(AP, P, _), % Not checking valid_position because it is world knowledge
+    adjacent(AP, P, _),
+    maybe_valid_position(P),
     learn(no_pit, P),
     fail.
 update_pits(no_breeze).
 
 update_pits(breeze) :-
     agent_position(AP),
-    adjacent(AP, P, _), % Not checking valid_position because it is world knowledge
+    adjacent(AP, P, _),
+    maybe_valid_position(P),
     \+ certain(no_pit, P),
     assertz(possible_position(pit, P)),
     fail.
@@ -344,14 +378,16 @@ update_flash(Flash) :-
 update_teleporter(no_flash) :-
     agent_position(AP),
     assertz(certain(no_teleporter, AP)),
-    adjacent(AP, P, _), % Not checking valid_position because it is world knowledge
+    adjacent(AP, P, _),
+    maybe_valid_position(P),
     learn(no_teleporter, P),
     fail.
 update_teleporter(no_flash) :- !.
 
 update_teleporter(flash) :-
     agent_position(AP),
-    adjacent(AP, P, _), % Not checking valid_position because it is world knowledge
+    adjacent(AP, P, _),
+    maybe_valid_position(P),
     \+ certain(no_teleporter, P),
     assertz(possible_position(teleporter, P)),
     fail.
@@ -368,7 +404,8 @@ update_glow(Glow) :-
 % update_gold(+Glow)
 update_gold(glow) :-
     agent_position(AP),
-    assertz(certain(gold, AP)).
+    assertz(certain(gold, AP)),
+    format('~t~2|gold position: ~w~n', [AP]).
 update_gold(no_glow) :-
     agent_position(AP),
     assertz(certain(no_gold, AP)).
@@ -386,6 +423,7 @@ update_impact(impact) :-
     adjacent(AP, PrevPos, Backwards),
     retractall(agent_position(_)),
     assertz(agent_position(PrevPos)),
+    format('~t~2|agent position: ~w~n', [PrevPos]),
     % Learn cave bounds
     learn_cave_bounds.
 
@@ -395,7 +433,8 @@ update_scream(no_scream).
 update_scream(scream) :-
     agent_position(AP),
     facing(Dir),
-    adjacent(AP, P, Dir), % Not checking valid_position because it is world knowledge
+    adjacent(AP, P, Dir),
+    maybe_valid_position(P),
     learn(no_enemy, P),
     learn(no_teleporter, P).
 
@@ -419,6 +458,17 @@ learn(no_pit, P) :-
 learn(pit, P) :-
     retractall(possible_position(_, P)),
     assertz(certain(pit, P)).
+learn(safe, P) :-
+    % Do nothing if already known to be safe
+    certain(safe, P),
+    !.
+learn(safe, P) :-
+    member(Danger, [enemy, pit, teleporter]),
+    retractall(possible_position(Danger, P)),
+    fail.
+learn(safe, P) :-
+    assertz(certain(safe, P)),
+    format('~t~2|safe: ~w~n', [P]).
 
 
 learn_cave_bounds :-
@@ -455,7 +505,7 @@ learn_cave_bounds :-
 
 review_lt_min_x_assumptions :-
     certain(minX, MinX),
-    possible_position(Element, Pos),
+    (possible_position(Element, Pos) ; certain(Element, Pos)),
     Pos = (X, _),
     X < MinX,
     retractall(possible_position(Element, Pos)),
@@ -528,6 +578,15 @@ infer_dangerous_positions :-
     fail.
 infer_dangerous_positions.
 
+% infer_safe_positions/0
+infer_safe_positions :-
+    certain(no_pit, Pos),
+    certain(no_enemy, Pos),
+    certain(no_teleporter, Pos),
+    learn(safe, Pos),
+    fail.
+infer_safe_positions.
+
 % maybe_valid_position/1
 % maybe_valid_position(+Pos)
 % Checks if a position is possibly valid, or fails if known to be invalid from learned bounds
@@ -579,13 +638,19 @@ maybe_valid_max_y(_).
 % -----------
 
 update_goal :-
+    % If the goal is to reach an invalid position, remove goal and backtrack
+    goal(reach(Pos)),
+    \+ maybe_valid_position(Pos),
+    retractall(goal(_)),
+    fail.
+update_goal :-
     % If no goal, set a new one
     \+ goal(_),
     ask_goal_KB(Goal),
     set_goal(Goal),
     !.
 update_goal :-
-    % If goal is reach, and position is reached, set to explore
+    % If goal is reach, and position is reached, get new goal
     goal(reach(P)),
     agent_position(P),
     ask_goal_KB(Goal),
@@ -604,21 +669,54 @@ set_goal(Goal) :-
     assertz(goal(Goal)).
 
 % TODO: implement goal choice
-ask_goal_KB(reach(5, 5)).
+ask_goal_KB(reach(Pos)) :-
+    certain(safe, Pos),
+    maybe_valid_position(Pos),
+    \+certain(visited, Pos),
+    !.
 
 
 %
 % Actions
 % -------
-% 1. Move forward
-% 2. Turn 90 deg clockwise
+% 1. Move forward (move_forward)
+% 2. Turn 90 deg clockwise (turn_clockwise)
 % 3. Pick up object (gold)
 % 4. Shoot on the current facing direction (deals random damage between 20 and 50
 %    to any enemy in the adjacent celin the direction the agent is facing)
 % 5. Climb out of the cave (only at the start )
 
-% TODO: implement next action choice based on current goal
-next_action(move_forward).
+% next_action/2
+% next_action(+Goal, -Action)
+% Gets the next Action to perform in order to reach Goal
+next_action(_, pick_up) :-
+    agent_position(AP),
+    certain(gold, AP),
+    !.
+next_action(reach(Pos), move_forward) :-
+    % If goal is to reach a position
+    % and the agent is next to the position and facing the right direction
+    agent_position(AP),
+    facing(Dir),
+    adjacent(AP, Pos, Dir),
+    % move forward
+    !.
+next_action(reach(Pos), turn_clockwise) :-
+    % If goal is to reach a position
+    % and the agent is next to the position, but facing the wrong direction
+    agent_position(AP),
+    adjacent(AP, Pos, _),
+    % turn clockwise
+    !.
+next_action(reach(Pos), Action) :-
+    % If goal is to reach a position and the agent is not next to the position
+    % try to reach an adjacent position
+    % TODO: Save path to avoid recalculation
+    % TODO: Try to improve performance of BFS
+    agent_position(AP),
+    bfs(AP, Pos, [Next | _]),
+    next_action(reach(Next), Action),
+    !.
 
 % perform_action/1
 % perform_action(+Action)
@@ -629,3 +727,51 @@ perform_action(move_forward) :-
     retractall(agent_position(_)),
     assertz(agent_position(NP)),
     world_step.
+perform_action(turn_clockwise) :-
+    facing(Direction),
+    clockwise(Direction, NewDirection),
+    retractall(facing(_)),
+    assertz(facing(NewDirection)).
+perform_action(pick_up) :-
+    collected(gold, Count),
+    NewCount is Count + 1,
+    retractall(collected(gold, _)),
+    assertz(collected(gold, NewCount)),
+    world_pick_up.
+
+% bfs/3
+% bfs(+Origin, +Goal, -Path)
+% Runs a bfs from a safe node to a possibly unsafe node, using a visited path
+bfs(Origin, Goal, Path) :-
+    reverse_bfs(Goal, [[Origin]], S),
+    reverse(S, [Origin | Path]),
+    !.
+
+% reverse_bfs/3
+% reverse_bfs(+Goal, +PossiblePaths, -Path)
+% Starts with PossiblePaths as [[Origin]] and expands a bfs. When done, Path
+% is the path from Goal to Origin (the reverse path from origin to Goal).
+reverse_bfs(Goal, [[Goal | Path] | _], [Goal | Path]).
+reverse_bfs(Goal, [Path | Paths], Solution) :-
+    bfs_extend(Path, Goal, NewPaths),
+    append(Paths, NewPaths, AllPaths),
+    reverse_bfs(Goal, AllPaths, Solution).
+reverse_bfs(Goal, [_|Paths], Solution) :-
+    reverse_bfs(Goal, Paths, Solution).
+
+% bfs_extend/3
+% bfs_extend(+Path, +Goal, -NewPaths)
+% Extends a known Path with its valid neighbours. An adjacent cell is included
+% in the path if it is visited or if it is the goal.
+bfs_extend([Origin | Path], Goal, NewPaths)  :-
+    findall(
+        [Next, Origin | Path],
+        (
+            adjacent(Origin, Next, _),
+            maybe_valid_position(Next),
+            (Next = Goal ; certain(visited, Next)),
+            \+ member(Next, [Origin | Path])
+        ),
+        NewPaths
+    ),
+    !.
