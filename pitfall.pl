@@ -26,9 +26,19 @@
     collected/2
 ]).
 
+% assert_new/1
+% assert_new(+Term)
+% Assertz Term if not already known. Avoids duplicate entries in the KB.
+assert_new(Term) :-
+    \+ Term,
+    assertz(Term),
+    !.
+assert_new(_).
+
 agent_position((1,1)).
 
 collected(gold, 0).
+collected(power_up, 0).
 
 %
 % World information
@@ -127,20 +137,85 @@ print_cave_line(Y) :-
     fail.
 print_cave_line(_) :- nl.
 print_cave_cell(X, Y) :-
-    world_position(Element, (X, Y)),
-    print_cave_element(Element),
+    world_position(agent, (X, Y)),
+    facing(north),
+    write('\033[48;5;35m^\033[0m'),
+    !.
+print_cave_cell(X, Y) :-
+    world_position(agent, (X, Y)),
+    facing(east),
+    write('\033[48;5;35m>\033[0m'),
+    !.
+print_cave_cell(X, Y) :-
+    world_position(agent, (X, Y)),
+    facing(west),
+    write('\033[48;5;35m<\033[0m'),
+    !.
+print_cave_cell(X, Y) :-
+    world_position(agent, (X, Y)),
+    facing(south),
+    write('\033[48;5;35mv\033[0m'),
+    !.
+print_cave_cell(X, Y) :-
+    certain(visited, (X,Y)),
+    write('\033[48;5;231m\033[38;5;0m.\033[0m'),
+    !.
+print_cave_cell(X, Y) :-
+    certain(safe, (X,Y)),
+    write('\033[48;5;231m\033[38;5;0mS\033[0m'),
+    !.
+print_cave_cell(X, Y) :-
+    certain(pit, (X,Y)),
+    write('\033[48;5;238mP\033[0m'),
+    !.
+print_cave_cell(X, Y) :-
+    certain(enemy, (X,Y)),
+    write('\033[48;5;208mD\033[0m'),
+    !.
+print_cave_cell(X, Y) :-
+    certain(teleporter, (X,Y)),
+    write('\033[48;5;26mT\033[0m'),
+    !.
+print_cave_cell(X, Y) :-
+    certain(gold, (X,Y)),
+    write('\033[48;5;220mO\033[0m'),
+    !.
+print_cave_cell(X, Y) :-
+    possible_position(pit, (X,Y)),
+    possible_position(enemy, (X,Y)),
+    possible_position(teleporter, (X,Y)),
+    write('!'),
+    !.
+print_cave_cell(X, Y) :-
+    possible_position(pit, (X,Y)),
+    possible_position(enemy, (X,Y)),
+    write('ç'),
+    !.
+print_cave_cell(X, Y) :-
+    possible_position(pit, (X,Y)),
+    possible_position(teleporter, (X,Y)),
+    write('+'),
+    !.
+print_cave_cell(X, Y) :-
+    possible_position(enemy, (X,Y)),
+    possible_position(teleporter, (X,Y)),
+    write('#'),
+    !.
+print_cave_cell(X, Y) :-
+    possible_position(pit, (X,Y)),
+    write('p'),
+    !.
+print_cave_cell(X, Y) :-
+    possible_position(enemy, (X,Y)),
+    write('d'),
+    !.
+print_cave_cell(X, Y) :-
+    possible_position(teleporter, (X,Y)),
+    write('t'),
     !.
 print_cave_cell(_, _) :-
-    print_cave_element(empty).
-
-print_cave_element(empty) :- write('.').
-print_cave_element(agent) :- write('X').
-print_cave_element(small_enemy) :- write('d').
-print_cave_element(large_enemy) :- write('D').
-print_cave_element(pit) :- write('P').
-print_cave_element(gold) :- write('O').
-print_cave_element(teletransporter) :- write('T').
-print_cave_element(power_up) :- write('U').
+    write('\033[48;5;0m\033[38;5;0m?\033[0m'),
+    !.
 
 %
 % Observation and decision making
@@ -158,12 +233,9 @@ sense_learn_act(Goal, Action) :-
     update_goal,
     goal(Goal),
     next_action(Goal, Action),
-    write_goal_action(Goal, Action),
     perform_action(Action),
     !.
 
-write_goal_action(Goal, Action) :-
-    format('Goal = ~w~nAction = ~w~n', [Goal, Action]).
 
 % Sensors
 % -----
@@ -273,7 +345,7 @@ world_step :-
     !.
 world_step :-
     % If invalid step, hit wall
-    assertz(hit_wall).
+    assert_new(hit_wall).
 
 world_pick_up :-
     % If on the same position as gold, remove gold from the world
@@ -309,13 +381,16 @@ update_knowledge(Sensors) :-
 
 set_visited_cell :-
     agent_position(AP),
-    assertz(certain(visited, AP)),
+    assert_new(certain(visited, AP)),
     format('~t~2|visited: ~w~n', [AP]).
 
 % update_steps/1
 % update_steps(+Steps)
 update_steps(Steps) :-
     agent_position(AP),
+    % Retract in case the agent killed an enemy that previously generated steps here
+    retractall(certain(steps, AP)),
+    retractall(certain(no_steps, AP)),
     assertz(certain(Steps, AP)),
     update_enemies(Steps).
 
@@ -323,6 +398,7 @@ update_steps(Steps) :-
 % update_enemies(+Steps)
 update_enemies(no_steps) :-
     agent_position(AP),
+    retractall(certain(enemy, AP)),
     learn(no_enemy, AP),
     adjacent(AP, P, _),
     maybe_valid_position(P),
@@ -335,7 +411,7 @@ update_enemies(steps) :-
     adjacent(AP, P, _),
     maybe_valid_position(P),
     \+ certain(no_enemy, P),
-    assertz(possible_position(enemy, P)),
+    assert_new(possible_position(enemy, P)),
     fail.
 update_enemies(steps).
 
@@ -343,7 +419,7 @@ update_enemies(steps).
 % update_breeze(+Breeze)
 update_breeze(Breeze) :-
     agent_position(AP),
-    assertz(certain(Breeze, AP)),
+    assert_new(certain(Breeze, AP)),
     update_pits(Breeze).
 
 % update_pits/1
@@ -362,7 +438,7 @@ update_pits(breeze) :-
     adjacent(AP, P, _),
     maybe_valid_position(P),
     \+ certain(no_pit, P),
-    assertz(possible_position(pit, P)),
+    assert_new(possible_position(pit, P)),
     fail.
 update_pits(breeze).
 
@@ -370,14 +446,16 @@ update_pits(breeze).
 % update_flash(+Flash)
 update_flash(Flash) :-
     agent_position(AP),
-    assertz(certain(Flash, AP)),
+    % Retract in case there was flash generated by a now killed teleporter
+    retractall(certain(flash, AP)),
+    assert_new(certain(Flash, AP)),
     update_teleporter(Flash).
 
 % update_teleporter/1
 % update_teleporter(+Flash)
 update_teleporter(no_flash) :-
     agent_position(AP),
-    assertz(certain(no_teleporter, AP)),
+    assert_new(certain(no_teleporter, AP)),
     adjacent(AP, P, _),
     maybe_valid_position(P),
     learn(no_teleporter, P),
@@ -389,7 +467,7 @@ update_teleporter(flash) :-
     adjacent(AP, P, _),
     maybe_valid_position(P),
     \+ certain(no_teleporter, P),
-    assertz(possible_position(teleporter, P)),
+    assert_new(possible_position(teleporter, P)),
     fail.
 update_teleporter(flash).
 
@@ -397,18 +475,22 @@ update_teleporter(flash).
 % update_glow(+Glow)
 update_glow(Glow) :-
     agent_position(AP),
-    assertz(certain(Glow, AP)),
+    % Retract in case we collected gold from this position
+    retractall(certain(glow, AP)),
+    assert_new(certain(Glow, AP)),
     update_gold(Glow).
 
 % update_gold/1
 % update_gold(+Glow)
 update_gold(glow) :-
     agent_position(AP),
-    assertz(certain(gold, AP)),
+    assert_new(certain(gold, AP)),
     format('~t~2|gold position: ~w~n', [AP]).
 update_gold(no_glow) :-
     agent_position(AP),
-    assertz(certain(no_gold, AP)).
+    % Retract in case we collected gold from this position
+    retractall(certain(gold, AP)),
+    assert_new(certain(no_gold, AP)).
 
 % update_impact/1
 % update_impact(+Impact)
@@ -438,26 +520,29 @@ update_scream(scream) :-
     learn(no_enemy, P),
     learn(no_teleporter, P).
 
+
 % learn/2
 % learn(+Item, +Location)
 learn(no_enemy, P) :-
     retractall(possible_position(enemy, P)),
-    assertz(certain(no_enemy, P)).
+    retractall(certain(enemy, P)),
+    assert_new(certain(no_enemy, P)).
 learn(enemy, P) :-
     retractall(possible_position(_, P)),
-    assertz(certain(enemy, P)).
+    assert_new(certain(enemy, P)).
 learn(no_teleporter, P) :-
     retractall(possible_position(teleporter, P)),
-    assertz(certain(no_teleporter, P)).
+    retractall(certain(teleporter, P)),
+    assert_new(certain(no_teleporter, P)).
 learn(teleporter, P) :-
     retractall(possible_position(_, P)),
-    assertz(certain(teleporter, P)).
+    assert_new(certain(teleporter, P)).
 learn(no_pit, P) :-
     retractall(possible_position(pit, P)),
-    assertz(certain(no_pit, P)).
+    assert_new(certain(no_pit, P)).
 learn(pit, P) :-
     retractall(possible_position(_, P)),
-    assertz(certain(pit, P)).
+    assert_new(certain(pit, P)).
 learn(safe, P) :-
     % Do nothing if already known to be safe
     certain(safe, P),
@@ -467,7 +552,7 @@ learn(safe, P) :-
     retractall(possible_position(Danger, P)),
     fail.
 learn(safe, P) :-
-    assertz(certain(safe, P)),
+    assert_new(certain(safe, P)),
     format('~t~2|safe: ~w~n', [P]).
 
 
@@ -475,28 +560,28 @@ learn_cave_bounds :-
     facing(east),
     % Hit wall when walking east, so learn maxX
     agent_position((MaxX, _)),
-    assertz(certain(maxX, MaxX)),
+    assert_new(certain(maxX, MaxX)),
     review_gt_max_x_assumptions,
     !.
 learn_cave_bounds :-
     facing(west),
     % Hit wall when walking west, so learn minX
     agent_position((MinX, _)),
-    assertz(certain(minX, MinX)),
+    assert_new(certain(minX, MinX)),
     review_lt_min_x_assumptions,
     !.
 learn_cave_bounds :-
     facing(north),
     % Hit wall when walking north, so learn maxY
     agent_position((_, MaxY)),
-    assertz(certain(maxY, MaxY)),
+    assert_new(certain(maxY, MaxY)),
     review_gt_max_y_assumptions,
     !.
 learn_cave_bounds :-
     facing(south),
     % Hit wall when walking south, so learn minY
     agent_position((_, MinY)),
-    assertz(certain(minY, MinY)),
+    assert_new(certain(minY, MinY)),
     review_lt_min_y_assumptions,
     !.
 
