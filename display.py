@@ -277,11 +277,14 @@ class PlayerDisplay(Rendered):
         self.pos = pos
         self.size = size
         self.player_color = "antiquewhite4"
+        img = pygame.image.load("guerreiro.png")
+        self.img = pygame.transform.scale(img,(self.size*2,self.size*2))
 
     def draw(self, surface: pygame.Surface) -> None:
         pos_x = self.pos[0]
         pos_y = self.pos[1]
-        pygame.draw.circle(surface,self.player_color,(pos_x + self.size,pos_y - self.size),self.size)
+        surface.blit(self.img,(pos_x,pos_y-self.size*2))
+        #pygame.draw.circle(surface,self.player_color,(pos_x + self.size,pos_y - self.size),self.size)
         return
 
 class PathDisplay(Rendered):

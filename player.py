@@ -1,5 +1,7 @@
+from argparse import Action
 import random
-from test import PrologQuerry
+import pygame
+from prologQuerry import PrologQuerry
 class Player ():
 
     def __init__(self,pos,size,mapa):
@@ -33,11 +35,11 @@ class Player ():
             self.dir = 3 
 
     def executa_acao(self):
-        acao = self.cerebro.faz_querry()
-        print(acao)
-        if acao == "turn_clockwise":
+        resposta = self.cerebro.faz_querry()
+        print(resposta)
+        if resposta['Action'] == "turn_clockwise":
             self.rotate()
-        elif acao == "move_forward":
+        elif resposta['Action'] == "move_forward":
             self.move_forward()
         else:
             print("Ação não compreendida")

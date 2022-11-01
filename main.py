@@ -172,7 +172,7 @@ class App:
 
         self.running = True
 
-        self.speed: float = 8#180 # Melhor entre 0.1 e 200
+        self.speed: float = 0.1#180 # Melhor entre 0.1 e 200
 
         self.window = display.Window()
         self.window.add_event_handler('main_quit_handler', pygame.QUIT, lambda e: self.stop_running())
@@ -215,10 +215,10 @@ class App:
         self.move_up_button = display.Button('Forward',(600,button_v_pos),(100,button_height),on_click=self.player.move_forward)
         self.move_up_button.set_window(self.window)
         
-        self.move_down_button = display.Button('Rotate',(700,button_v_pos),(100,button_height),on_click=self.player.rotate)
+        self.move_down_button = display.Button('Rotate',(700,button_v_pos),(100,button_height),on_click=self.rotate_player)
         self.move_down_button.set_window(self.window)
-        
-        self.move_down_button = display.Button('Executa Ação',(800,button_v_pos),(100,button_height),on_click=self.player.executa_acao)
+        self.auto_path = False
+        self.move_down_button = display.Button('Executa Ação',(800,button_v_pos),(100,button_height),on_click=self.change_auto_path)
         self.move_down_button.set_window(self.window)   
 
         self.path_finder = PathFinder(
@@ -250,6 +250,13 @@ class App:
         self.tempo_total = self.path_finder.get_accumulated_cost()
         self.timer.text = self.jornada_string + str(self.tempo_total)
     
+    def rotate_player(self):
+        self.player.rotate()
+        self.player_display.img = pygame.transform.rotate(self.player_display.img,-90)
+    
+    def change_auto_path(self):
+        self.auto_path =  not self.auto_path
+
     ###############
     # Path Finder #
     ###############
@@ -291,6 +298,8 @@ class App:
             self.update_time_text()
             self.window.process_events()
             self.window.display()
+            if self.auto_path:
+                self.player.executa_acao()
         pygame.quit()
 
     def start_search(self):
