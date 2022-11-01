@@ -1,3 +1,4 @@
+from turtle import onclick
 import map, display, player
 import searchagent as search
 
@@ -190,6 +191,10 @@ class App:
         self.mapDisplay = display.MapDisplay(self.mapa, (10, map_v_pos), (map_width, map_height))
         self.mapDisplay.set_window(self.window)
 
+        self.player = player.Player(pos = [self.mapDisplay.pos[0],self.mapDisplay.pos[1]+self.mapDisplay.tile_size * self.mapa.n_lines ],size = self.mapDisplay.tile_size, mapa = self.mapa)
+        self.player_display = display.PlayerDisplay(self.mapa,self.player.pos,self.mapDisplay.tile_size/2)
+        self.player_display.set_window(self.window)
+
         self.tempo_total = 0
         self.jornada_string = "Tempo da jornada: "
         self.timer = display.Text(self.jornada_string + str(self.tempo_total), (30, timer_v_pos), timer_font_size)
@@ -207,10 +212,12 @@ class App:
         self.reset_button = display.Button('Zerar', (400, button_v_pos), (100, button_height), on_click=self.reset_search)
         self.reset_button.set_window(self.window)
 
-        self.player = player.Player(pos = (200,200))#TODO mudar posicao
-        self.player_display = display.PlayerDisplay(self.mapa,self.player.pos,self.mapDisplay.tile_size/2)
-        self.player_display.set_window(self.window)
-
+        self.move_up_button = display.Button('Forward',(600,button_v_pos),(100,button_height),on_click=self.player.move_forward)
+        self.move_up_button.set_window(self.window)
+        
+        self.move_down_button = display.Button('Rotate',(700,button_v_pos),(100,button_height),on_click=self.player.rotate)
+        self.move_down_button.set_window(self.window)
+        
         self.path_finder = PathFinder(
             self.mapa, updated_path=self.path_finder_updated_path, found_best_path=self.path_finder_found_best_path,
             finished=self.path_finder_finished_running
