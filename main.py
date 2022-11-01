@@ -167,7 +167,7 @@ class App:
 
     def __init__(self):
         pygame.init()
-        
+
         self.mapa = map.Map.read_from_file("mapa.txt")
 
         self.running = True
@@ -218,6 +218,9 @@ class App:
         self.move_down_button = display.Button('Rotate',(700,button_v_pos),(100,button_height),on_click=self.player.rotate)
         self.move_down_button.set_window(self.window)
         
+        self.move_down_button = display.Button('Executa Ação',(800,button_v_pos),(100,button_height),on_click=self.player.executa_acao)
+        self.move_down_button.set_window(self.window)   
+
         self.path_finder = PathFinder(
             self.mapa, updated_path=self.path_finder_updated_path, found_best_path=self.path_finder_found_best_path,
             finished=self.path_finder_finished_running

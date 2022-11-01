@@ -1,8 +1,6 @@
 import random
-
+from test import PrologQuerry
 class Player ():
-
-    life = 100
 
     def __init__(self,pos,size,mapa):
         self.pos = pos
@@ -10,6 +8,7 @@ class Player ():
         self.size = size
         self.dir = 0 # 0 = direita, 1 = cima, 2 = esquerda, 3 = baixo
         self.mapa = mapa
+        self.cerebro = PrologQuerry()
 
     def move_forward(self):
         if self.dir == 0:
@@ -33,8 +32,12 @@ class Player ():
         if self.dir < 0:
             self.dir = 3 
 
-    def attack(self,enemy):
-        try:
-            enemy.takeDamage(random.randint(20,50))
-        except all:
-            print("Inimigo não possui atributo vida")
+    def executa_acao(self):
+        acao = self.cerebro.faz_querry()
+        print(acao)
+        if acao == "turn_clockwise":
+            self.rotate()
+        elif acao == "move_forward":
+            self.move_forward()
+        else:
+            print("Ação não compreendida")
