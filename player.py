@@ -1,7 +1,7 @@
 from argparse import Action
 import random
 import pygame
-from prologQuerry import PrologQuerry
+from prologQuerry import PrologQuery
 class Player ():
 
     def __init__(self,pos,size,mapa):
@@ -10,7 +10,7 @@ class Player ():
         self.size = size
         self.dir = 0 # 0 = direita, 1 = cima, 2 = esquerda, 3 = baixo
         self.mapa = mapa
-        self.cerebro = PrologQuerry()
+        self.cerebro = PrologQuery()
 
     def move_forward(self):
         if self.dir == 0:
@@ -36,6 +36,7 @@ class Player ():
 
     def executa_acao(self):
         resposta = self.cerebro.faz_querry()
+        mapa = self.cerebro.olha_mapa() #Apenas printa o mapa pela visao do jogador
         print(resposta)
         if resposta['Action'] == "turn_clockwise":
             self.rotate()

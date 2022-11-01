@@ -1,6 +1,6 @@
 from pyswip import Prolog
 
-class PrologQuerry():
+class PrologQuery():
 
     def __init__(self):
         self.prolog = Prolog()
@@ -10,3 +10,7 @@ class PrologQuerry():
         for i,action in enumerate(self.prolog.query("sense_learn_act(Goal,Action).")):
             #print (i)
             return action
+
+    def olha_mapa(self):
+        for i,dicionario in enumerate(self.prolog.query("print_cave.")):
+            return dicionario
