@@ -281,7 +281,7 @@ class PlayerDisplay(Rendered):
     def draw(self, surface: pygame.Surface) -> None:
         pos_x = self.pos[0]
         pos_y = self.pos[1]
-        pygame.draw.circle(surface,self.player_color,(pos_x - self.size/2,pos_y - self.size/2),self.size)
+        pygame.draw.circle(surface,self.player_color,(pos_x + self.size,pos_y - self.size),self.size)
         return
 
 class PathDisplay(Rendered):
