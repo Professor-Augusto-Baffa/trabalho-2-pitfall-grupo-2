@@ -33,14 +33,3 @@ class Player ():
         self.dir -= 1
         if self.dir < 0:
             self.dir = 3 
-
-    def executa_acao(self):
-        resposta = self.cerebro.faz_querry()
-        mapa = self.cerebro.olha_mapa() #Apenas printa o mapa pela visao do jogador
-        print(resposta)
-        if resposta['Action'] == "turn_clockwise":
-            self.rotate()
-        elif resposta['Action'] == "move_forward":
-            self.move_forward()
-        else:
-            print("Ação não compreendida")
