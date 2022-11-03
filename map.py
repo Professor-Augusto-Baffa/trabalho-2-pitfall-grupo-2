@@ -3,7 +3,7 @@ import typing
 
 class Tile:
 
-    VALID_TYPES = '.dDPTOU'
+    VALID_TYPES = '.dDPTOUB'
 
     def __init__(self, letter: str) -> None:
         if letter not in Tile.VALID_TYPES:

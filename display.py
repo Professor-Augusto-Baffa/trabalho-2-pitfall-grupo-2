@@ -16,7 +16,7 @@ class Window:
         self.width = 1200
         self.height = 650
         self.surface = pygame.display.set_mode((self.width, self.height))
-        pygame.display.set_caption("Jornada na Terra Media")
+        pygame.display.set_caption("Joguinho da caverna")
         self.renderers: typing.Dict[int, typing.Dict[str, 'Window.RendererType']] = dict()
         self.event_handlers: typing.Dict[int, typing.Dict[str, 'Window.RendererType']] = dict()
     
@@ -250,6 +250,8 @@ class MapDisplay(Rendered):
             color_str = "darkgoldenrod2"
         elif letter == 'U':
             color_str = "firebrick"
+        elif letter == 'B':
+            color_str = "gray14"
         else:
             color_str = "darkgoldenrod1"
         pygame.draw.rect(surface, pygame.Color(color_str), pygame.Rect(pos_x,pos_y,size,size))
@@ -277,11 +279,14 @@ class PlayerDisplay(Rendered):
         self.pos = pos
         self.size = size
         self.player_color = "antiquewhite4"
+        img = pygame.image.load("guerreiro.png")
+        self.img = pygame.transform.scale(img,(self.size*2,self.size*2))
 
     def draw(self, surface: pygame.Surface) -> None:
         pos_x = self.pos[0]
         pos_y = self.pos[1]
-        pygame.draw.circle(surface,self.player_color,(pos_x - self.size/2,pos_y - self.size/2),self.size)
+        surface.blit(self.img,(pos_x,pos_y-self.size*2))
+        #pygame.draw.circle(surface,self.player_color,(pos_x + self.size,pos_y - self.size),self.size)
         return
 
 class PathDisplay(Rendered):
