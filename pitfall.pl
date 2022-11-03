@@ -17,6 +17,7 @@
 
 :- dynamic([
     world_position/2,
+    possible_position/2,
     agent_position/1,
     facing/1,
     hit_wall/0,
@@ -111,14 +112,21 @@ world_position(gold, (3, 5)).
 world_position(gold, (9, 11)).
 world_position(gold, (11, 2)).
 
-world_position(teletransporter, (1, 7)).
-world_position(teletransporter, (4, 11)).
-world_position(teletransporter, (7, 3)).
-world_position(teletransporter, (10, 1)).
+world_position(teleporter, (1, 7)).
+world_position(teleporter, (4, 11)).
+world_position(teleporter, (7, 3)).
+world_position(teleporter, (10, 1)).
 
 world_position(power_up, (1, 12)).
 world_position(power_up, (2, 2)).
 world_position(power_up, (7, 7)).
+
+world_count(small_enemy, 2).
+world_count(large_enemy, 2).
+world_count(pit, 8).
+world_count(gold, 3).
+world_count(teleporter, 4).
+world_count(power_up, 3).
 
 % Print cave for debugging
 
@@ -184,12 +192,12 @@ print_cave_cell(X, Y) :-
     possible_position(pit, (X,Y)),
     possible_position(enemy, (X,Y)),
     possible_position(teleporter, (X,Y)),
-    write('!'),
+    write('+'),
     !.
 print_cave_cell(X, Y) :-
     possible_position(pit, (X,Y)),
     possible_position(enemy, (X,Y)),
-    write('ç'),
+    write('+'),
     !.
 print_cave_cell(X, Y) :-
     possible_position(pit, (X,Y)),
@@ -199,19 +207,19 @@ print_cave_cell(X, Y) :-
 print_cave_cell(X, Y) :-
     possible_position(enemy, (X,Y)),
     possible_position(teleporter, (X,Y)),
-    write('#'),
+    write('+'),
     !.
 print_cave_cell(X, Y) :-
     possible_position(pit, (X,Y)),
-    write('p'),
+    write('\033[48;5;238mp\033[0m'),
     !.
 print_cave_cell(X, Y) :-
     possible_position(enemy, (X,Y)),
-    write('d'),
+    write('\033[48;5;208md\033[0m'),
     !.
 print_cave_cell(X, Y) :-
     possible_position(teleporter, (X,Y)),
-    write('t'),
+    write('\033[48;5;26mt\033[0m'),
     !.
 print_cave_cell(_, _) :-
     write('\033[48;5;0m\033[38;5;0m?\033[0m'),
@@ -290,17 +298,17 @@ sense_breeze(breeze) :-
     world_position(agent, AP),
     world_position(pit, PP),
     adjacent(AP, PP, _),
-    valid_position(PP). %%%%
+    valid_position(PP).
 sense_breeze(no_breeze).
 
 % sense_flash/1
 % sense_flash(-Flash)
-% flash if teletransporter in adjacent cell
+% flash if teleporter in adjacent cell
 sense_flash(flash) :-
     world_position(agent, AP),
-    world_position(teletransporter, TP),
+    world_position(teleporter, TP),
     adjacent(AP, TP, _),
-    valid_position(TP). %%%%
+    valid_position(TP).
 sense_flash(no_flash).
 
 % sense_glow/1
@@ -723,6 +731,9 @@ maybe_valid_max_y(_).
 % -----------
 
 update_goal :-
+    % If the goal is to leave, don't change it
+    goal(leave).
+update_goal :-
     % If the goal is to reach an invalid position, remove goal and backtrack
     goal(reach(Pos)),
     \+ maybe_valid_position(Pos),
@@ -738,6 +749,7 @@ update_goal :-
     % If goal is reach, and position is reached, get new goal
     goal(reach(P)),
     agent_position(P),
+    retractall(goal(_)),
     ask_goal_KB(Goal),
     set_goal(Goal),
     !.
@@ -754,6 +766,11 @@ set_goal(Goal) :-
     assertz(goal(Goal)).
 
 % TODO: implement goal choice
+ask_goal_KB(leave) :-
+    % If collected all gold, leave the cave
+    world_count(gold, GC),
+    collected(gold, GC).
+
 ask_goal_KB(reach(Pos)) :-
     certain(safe, Pos),
     maybe_valid_position(Pos),
@@ -796,12 +813,19 @@ next_action(reach(Pos), turn_clockwise) :-
 next_action(reach(Pos), Action) :-
     % If goal is to reach a position and the agent is not next to the position
     % try to reach an adjacent position
-    % TODO: Save path to avoid recalculation
-    % TODO: Try to improve performance of BFS
     agent_position(AP),
     bfs(AP, Pos, [Next | _]),
     next_action(reach(Next), Action),
     !.
+next_action(leave, step_out) :-
+    % If goal is to leave, and the agent is at (1,1), step out of the cave
+    agent_position((1,1)),
+    !.
+next_action(leave, Action) :-
+    % If goal is to leave and the agent is not at (1,1), act to reach (1,1)
+    next_action(reach((1,1)), Action),
+    !.
+    
 
 % perform_action/1
 % perform_action(+Action)
@@ -823,6 +847,7 @@ perform_action(pick_up) :-
     retractall(collected(gold, _)),
     assertz(collected(gold, NewCount)),
     world_pick_up.
+perform_action(step_out). % Nothing to do
 
 % bfs/3
 % bfs(+Origin, +Goal, -Path)
@@ -833,30 +858,42 @@ bfs(Origin, Goal, Path) :-
     !.
 
 % reverse_bfs/3
-% reverse_bfs(+Goal, +PossiblePaths, -Path)
-% Starts with PossiblePaths as [[Origin]] and expands a bfs. When done, Path
+% reverse_bfs(+Goal, +PathsQueue, -Path)
+% Starts with PathsQueue as [[Origin]] and expands a bfs. When done, Path
 % is the path from Goal to Origin (the reverse path from origin to Goal).
 reverse_bfs(Goal, [[Goal | Path] | _], [Goal | Path]).
-reverse_bfs(Goal, [Path | Paths], Solution) :-
-    bfs_extend(Path, Goal, NewPaths),
-    append(Paths, NewPaths, AllPaths),
-    reverse_bfs(Goal, AllPaths, Solution).
-reverse_bfs(Goal, [_|Paths], Solution) :-
-    reverse_bfs(Goal, Paths, Solution).
+reverse_bfs(Goal, [CurrentPath | QueuedPaths], Solution) :-
+    bfs_extend(CurrentPath, Goal, CurrentPathExtended),
+    append(QueuedPaths, CurrentPathExtended, NewQueue),
+    reverse_bfs(Goal, NewQueue, Solution).
+reverse_bfs(Goal, [_ | QueueTail], Solution) :-
+    % If bfs_extend fails in the previous case,
+    % then the first path does not lead to the Goal and cannot be further extended,
+    % so drop it from the queue.
+    reverse_bfs(Goal, QueueTail, Solution).
 
 % bfs_extend/3
-% bfs_extend(+Path, +Goal, -NewPaths)
+% bfs_extend(+Path, +Goal, -ExtendedPaths)
 % Extends a known Path with its valid neighbours. An adjacent cell is included
 % in the path if it is visited or if it is the goal.
-bfs_extend([Origin | Path], Goal, NewPaths)  :-
-    findall(
+bfs_extend([Origin | Path], Goal, ExtendedPaths)  :-
+    setof(
         [Next, Origin | Path],
-        (
-            adjacent(Origin, Next, _),
+        Next^Dir^Goal^(
+            adjacent(Origin, Next, Dir),
+            \+ member(Next, [Origin | Path]),
             maybe_valid_position(Next),
-            (Next = Goal ; certain(visited, Next)),
-            \+ member(Next, [Origin | Path])
+            (Next = Goal ; certain(visited, Next))
         ),
-        NewPaths
+        ExtendedPaths
     ),
+    !.
+
+% For testing only
+% Runs the algorithm until finding a gold position
+run_until_gold :-
+    sense_learn_act(_, A),
+    print_cave,
+    A \= pick_up,
+    run_until_gold,
     !.
