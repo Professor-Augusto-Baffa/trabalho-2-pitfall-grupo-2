@@ -798,10 +798,12 @@ ask_goal_KB(leave) :-
     !.
 
 ask_goal_KB(reach(Pos)) :-
-    certain(safe, Pos),
-    maybe_valid_position(Pos),
-    \+certain(visited, Pos),
+    next_position_to_explore(Pos),
     !.
+    % certain(safe, Pos),
+    % maybe_valid_position(Pos),
+    % \+certain(visited, Pos),
+    % !.
 
 ask_goal_KB(kill(EnemyPos)) :-
     % If unable to explore new positions, find an enemy in the frontier and kill it
@@ -823,6 +825,39 @@ ask_goal_KB(kill(EnemyPos)) :-
     sort(0, @>, EnemyChoices, [(_, _, EnemyPos) | _]),
     !.
 
+% next_position_to_explore/1
+% next_position_to_explore(-Pos)
+% Gets the next position to try to reach when exploring the cave
+next_position_to_explore(Pos) :-
+    agent_position(AP),
+    next_position_to_explore([AP], [], Pos).
+
+% next_position_to_explore/3
+% next_position_to_explore(+Queue, +Explored, -Pos)
+% Expands neighbours in a BFS fashion until a safe unexplored position is found
+next_position_to_explore([], _, _) :- !, fail.
+next_position_to_explore([Pos | _], _, Pos) :-
+    % If the next in the queue has not been visited, pick it to explore
+    \+ certain(visited, Pos),
+    !.
+next_position_to_explore([Next | QueueTail], Explored, Pos) :-
+    setof(
+        Neighbour,
+        Dir^(
+            adjacent(Next, Neighbour, Dir),
+            maybe_valid_position(Neighbour),
+            certain(safe, Neighbour),
+            \+ member(Neighbour, Explored),
+            \+ member(Neighbour, QueueTail)
+        ),
+        QueueAdd
+    ),
+    append(QueueTail, QueueAdd, Queue),
+    !,
+    next_position_to_explore(Queue, [Next | Explored], Pos).
+next_position_to_explore([Failed | QueueTail], Explored, Pos) :-
+    !,
+    next_position_to_explore(QueueTail, [Failed | Explored], Pos).
 
 % enemy_in_frontier/1
 % enemy_in_frontier(-EnemyPos)
