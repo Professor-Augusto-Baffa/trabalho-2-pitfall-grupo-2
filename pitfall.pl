@@ -329,7 +329,6 @@ sense_impact(no_impact).
 % sense_scream/1
 % sense_scream(-Scream)
 % scream if killed enemy in previous step
-% TODO
 sense_scream(scream) :-
     killed_enemy.
 sense_scream(no_scream).
@@ -355,6 +354,17 @@ world_step :-
     % If invalid step, hit wall
     assert_new(hit_wall).
 
+world_shoot :-
+    world_position(agent, AP),
+    facing(Dir),
+    adjacent(AP, EnemyPos, Dir),
+    % TODO implement damage. For now, only remove the enemy
+    retractall(world_position(small_enemy, EnemyPos)),
+    retractall(world_position(large_enemy, EnemyPos)),
+    retractall(world_position(teleporter, EnemyPos)),
+    assertz(killed_enemy),
+    !.
+
 world_pick_up :-
     % If on the same position as gold, remove gold from the world
     world_position(agent, AP),
@@ -365,6 +375,8 @@ clear_transient_flags :-
     retractall(hit_wall),
     retractall(killed_enemy).
 
+% TODO: invalidate observations around a killed enemy
+% TODO: choose closer positions to explore
 
 %
 % Update knowledge
@@ -598,37 +610,39 @@ learn_cave_bounds :-
 
 review_lt_min_x_assumptions :-
     certain(minX, MinX),
-    (possible_position(Element, Pos) ; certain(Element, Pos)),
-    Pos = (X, _),
+    format('X >= ~w~n', [MinX]),
+    (possible_position(_, (X, _)) ; certain(_, (X, _))),
     X < MinX,
-    retractall(possible_position(Element, Pos)),
+    retractall(possible_position(_, (X, _))),
+    retractall(certain(_, (X, _))),
     fail.
 review_lt_min_x_assumptions.
 
 review_lt_min_y_assumptions :-
     certain(minY, MinY),
-    possible_position(Element, Pos),
-    Pos = (_, Y),
+    format('Y >= ~w~n', [MinY]),
+    (possible_position(_, (_, Y)) ; certain(_, (_, Y))),
     Y < MinY,
-    retractall(possible_position(Element, Pos)),
+    retractall(possible_position(_, (_, Y))),
+    retractall(certain(_, (_, Y))),
     fail.
 review_lt_min_y_assumptions.
 
 review_gt_max_x_assumptions :-
     certain(maxX, MaxX),
-    possible_position(Element, Pos),
-    Pos = (X, _),
+    format('X <= ~w~n', [MaxX]),
+    (possible_position(_, (X, _)) ; certain(_, (X, _))),
     X > MaxX,
-    retractall(possible_position(Element, Pos)),
+    retractall(possible_position(_, (X, _))),
     fail.
-review_lt_max_x_assumptions.
+review_gt_max_x_assumptions.
 
 review_gt_max_y_assumptions :-
     certain(maxY, MaxY),
-    possible_position(Element, Pos),
-    Pos = (_, Y),
+    format('Y <= ~w~n', [MaxY]),
+    (possible_position(_, (_, Y)) ; certain(_, (_, Y))),
     Y > MaxY,
-    retractall(possible_position(Element, Pos)),
+    retractall(possible_position(_, (_, Y))),
     fail.
 review_gt_max_y_assumptions.
 
@@ -740,6 +754,12 @@ update_goal :-
     retractall(goal(_)),
     fail.
 update_goal :-
+    % If the goal is to kill an enemy, and the enemy has been killed, remove goal and backtrack
+    goal(kill(Pos)),
+    certain(no_enemy, Pos),
+    retractall(goal(_)),
+    fail.
+update_goal :-
     % If no goal, set a new one
     \+ goal(_),
     ask_goal_KB(Goal),
@@ -755,7 +775,12 @@ update_goal :-
     !.
 update_goal :-
     % If goal is reach, and haven't reached yet, don't change goal
-    goal(reach(_)).
+    goal(reach(_)),
+    !.
+update_goal :-
+    % If the goal is to kill an enemy that hasn't been killed, keep it
+    goal(kill(_)),
+    !.
 % For now, only `reach` goals. Later, if no cells are available and we are certain of enemy positions,
 % we could set a goal to kill an enemy at a given position to unblock new areas
 
@@ -769,7 +794,8 @@ set_goal(Goal) :-
 ask_goal_KB(leave) :-
     % If collected all gold, leave the cave
     world_count(gold, GC),
-    collected(gold, GC).
+    collected(gold, GC),
+    !.
 
 ask_goal_KB(reach(Pos)) :-
     certain(safe, Pos),
@@ -777,7 +803,43 @@ ask_goal_KB(reach(Pos)) :-
     \+certain(visited, Pos),
     !.
 
+ask_goal_KB(kill(EnemyPos)) :-
+    % If unable to explore new positions, find an enemy in the frontier and kill it
+    bagof(
+        (Count, Distance, OneEnemyPos),
+        AP^Path^(
+            % Get enemy in the known frontier
+            enemy_in_frontier(OneEnemyPos),
+            % Get the number of cells that will unblock in up to three movements
+            frontier_count(OneEnemyPos, 3, Count),
+            % Get the distance in case there's two equally good enemy options
+            agent_position(AP),
+            a_star(AP, OneEnemyPos, Path),
+            length(Path, Distance)
+        ),
+        EnemyChoices
+    ),
+    % Sort according to the number of unblocked cells and the distance
+    sort(0, @>, EnemyChoices, [(_, _, EnemyPos) | _]),
+    !.
 
+
+% enemy_in_frontier/1
+% enemy_in_frontier(-EnemyPos)
+% Returns the position of an enemy that is on the frontier of known cells,
+% meaning that the agents knows nothing about cells "after" the enemy.
+enemy_in_frontier(EnemyPos) :-
+    % Get a position where there is surely an enemy
+    (certain(enemy, EnemyPos) ; certain(teleporter, EnemyPos)),
+    % With an adjacent safe position
+    adjacent(EnemyPos, SafePos, Dir),
+    certain(safe, SafePos),
+    % And with an opposite side...
+    clockwise(Dir, Perp),
+    clockwise(Perp, Backwards),
+    adjacent(EnemyPos, UnexploredPos, Backwards),
+    % ...that the agent knows nothing about
+    \+ certain(_, UnexploredPos).
 %
 % Actions
 % -------
@@ -814,7 +876,7 @@ next_action(reach(Pos), Action) :-
     % If goal is to reach a position and the agent is not next to the position
     % try to reach an adjacent position
     agent_position(AP),
-    bfs(AP, Pos, [Next | _]),
+    a_star(AP, Pos, [Next | _]),
     next_action(reach(Next), Action),
     !.
 next_action(leave, step_out) :-
@@ -825,7 +887,25 @@ next_action(leave, Action) :-
     % If goal is to leave and the agent is not at (1,1), act to reach (1,1)
     next_action(reach((1,1)), Action),
     !.
-    
+
+next_action(kill(EnemyPos), shoot) :-
+    % If goal is to kill, and the agent is adjacent to the enemy in the right direction,
+    % shoot
+    agent_position(AP),
+    facing(Dir),
+    adjacent(AP, EnemyPos, Dir),
+    !.
+next_action(kill(EnemyPos), turn_clockwise) :-
+    % If goal is to kill, and the agent is adjacent to the enemy in the wrong direction,
+    % turn
+    agent_position(AP),
+    adjacent(AP, EnemyPos, _),
+    !.
+next_action(kill(EnemyPos), Action) :-
+    % If goal is to kill, and the agent is not next to the enemy,
+    % act as if going to the enemy position
+    next_action(reach(EnemyPos), Action),
+    !.
 
 % perform_action/1
 % perform_action(+Action)
@@ -848,6 +928,10 @@ perform_action(pick_up) :-
     assertz(collected(gold, NewCount)),
     world_pick_up.
 perform_action(step_out). % Nothing to do
+perform_action(shoot) :-
+    format('SHOOT~n'),
+    world_shoot,
+    !.
 
 % bfs/3
 % bfs(+Origin, +Goal, -Path)
@@ -889,11 +973,136 @@ bfs_extend([Origin | Path], Goal, ExtendedPaths)  :-
     ),
     !.
 
+% a_star/3
+% a_star(+Origin, +Goal, -Path)
+% Runs an a-star-like algorithm from a safe node to a possibly unsafe node, using a visited path
+a_star(Origin, Goal, Path) :-
+    a_star_heuristic(Origin, Goal, StartH),
+    reverse_a_star(Goal, [([Origin], StartH)], S),
+    reverse(S, [Origin | Path]),
+    !.
+
+% reverse_a_star/3
+% reverse_a_star(+Goal, +Queue, -Path)
+% Runs an a-star-like algorithm and returns the reversed best path to the Goal.
+% The first call receives [([Origin], Heuristic)] as the Queue, where Heuristic is
+% the estimated cost from Origin to Goal.
+reverse_a_star(Goal, [([Goal | Path], _) | _], [Goal | Path]).
+reverse_a_star(Goal, [(CurrentPath, _) | QueuedPaths], Solution) :-
+    a_star_extend(CurrentPath, Goal, CurrentPathExtended),
+    a_star_push_all(QueuedPaths, CurrentPathExtended, NewQueue),
+    reverse_a_star(Goal, NewQueue, Solution).
+reverse_a_star(Goal, [_ | QueueTail], Solution) :-
+    % If a_star_extend fails in the previous case,
+    % then the first path does not lead to the Goal and cannot be further extended,
+    % so drop it from the queue.
+    reverse_a_star(Goal, QueueTail, Solution).
+
+% a_star_push/3
+% a_star_push(+PathPair, +Frontier, -NewFrontier)
+% PathPair is a tuple (Path, TotalEstimatedPathCost)
+% Pushes a PathPair to the Frontier keeping it sorted by estimated cost
+a_star_push((Nodes, EstCost), [], [(Nodes, EstCost)]) :- !.
+a_star_push(
+    (Nodes, EC),
+    [(FirstNodes, EC_f) | FrontierTail], [(Nodes, EC), (FirstNodes, EC_f) | FrontierTail]
+) :-
+    EC < EC_f,
+    !.
+a_star_push((Nodes, EstCost), [FirstNodePair | FrontierTail], [FirstNodePair | NewTail]) :-
+    a_star_push((Nodes, EstCost), FrontierTail, NewTail),
+    !.
+
+% a_star_push_all/3
+% a_star_push_all(+PathPairList, +Frontier, -NewFrontier)
+% PathPairList is list of tuples (Path, TotalEstimatedPathCost)
+% Pushes each PathPair to the Frontier keeping it sorted by estimated cost
+a_star_push_all([], Frontier, Frontier).
+a_star_push_all([FirstPair | PathPais], Frontier, NewFrontier) :-
+    a_star_push(FirstPair, Frontier, PartialFrontier),
+    a_star_push_all(PathPais, PartialFrontier, NewFrontier),
+    !.
+
+% a_star_extend/3
+% a_star_extend(+Path, +Goal, -ExtendedPathPairs)
+% ExtendedPathPairs is a list of tuples (Path, EstimatedCost) that includes the
+% new paths reacheable from Origin
+a_star_extend([Origin | Path], Goal, ExtendedPathPairs)  :-
+    setof(
+        ([Next, Origin | Path], EstCost),
+        Next^Dir^Goal^(
+            adjacent(Origin, Next, Dir),
+            \+ member(Next, [Origin | Path]),
+            maybe_valid_position(Next),
+            (Next = Goal ; certain(visited, Next)),
+            a_star_path_heuristic([Next, Origin | Path], Goal, EstCost)
+        ),
+        ExtendedPathPairs
+    ),
+    !.
+
+% a_star_path_heuristic/3
+% a_star_path_heuristic(+Path, +Goal, -EstCost)
+% Returns the known path cost plus the heuristic from the current Path end to the Goal
+a_star_path_heuristic([Next | Path], Goal, EstCost) :-
+    length(Path, L),
+    a_star_heuristic(Next, Goal, H),
+    EstCost is L + H,
+    !.
+
+% a_star_heuristic/3
+% a_star_heuristic(+Origin, +Goal, -EstCost)
+% Estimates the cost from Origin to Goal
+a_star_heuristic((X0, Y0), (X1, Y1), H) :-
+    H is abs(Y1 - Y0) + abs(X1 - X0).
+
+
+
+% frontier_count/3
+% frontier_count(+Origin, +Rounds, -Count)
+% Counts how many new cells can be explored from Origin in up to Rounds moves
+frontier_count(Origin, Rounds, Count) :-
+    frontier_extend(Origin, Rounds, ExtendedFrontier),
+    length(ExtendedFrontier, Count),
+    !.
+
+% frontier_extend/3
+% frontier_extend(+Origin, +Rounds, -Frontier)
+% Gets a list of unknown cells that can be visited in up to Rounds moves from Origin
+frontier_extend(Origin, Rounds, Frontier) :-
+    frontier_extend([(Origin, 0)], [], Rounds, Frontier),
+    !.
+
+% frontier_extend/4
+% frontier_extend(+Queue, +Explored, +MaxDepth, -ExtendedFrontier)
+frontier_extend([], _, _, []).
+frontier_extend([(_, MaxDepth) | QueueTail], Explored, MaxDepth, Frontier) :-
+    frontier_extend(QueueTail, Explored, MaxDepth, Frontier),
+    !.
+frontier_extend([(Origin, Depth) | QueueTail], Explored, MaxDepth, Frontier) :-
+    NextDepth is Depth + 1,
+    setof(
+        (Neighbour, NextDepth),
+        Dir^(
+            adjacent(Origin, Neighbour, Dir),
+            maybe_valid_position(Neighbour),
+            \+ member(Neighbour, Explored),
+            \+ member(Neighbour, QueueTail),
+            \+ certain(_, Neighbour)
+        ),
+        QueueAdd
+    ),
+    append(QueueTail, QueueAdd, Queue),
+    frontier_extend(Queue, [Origin | Explored], MaxDepth, PartialFrontier),
+    append([Origin], PartialFrontier, Frontier),
+    !.
+
 % For testing only
 % Runs the algorithm until finding a gold position
-run_until_gold :-
+run_until_pickup_or_shoot :-
     sense_learn_act(_, A),
     print_cave,
     A \= pick_up,
-    run_until_gold,
+    A \= shoot,
+    run_until_pickup_or_shoot,
     !.
