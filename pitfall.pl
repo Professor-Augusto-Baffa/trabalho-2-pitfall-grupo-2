@@ -809,15 +809,14 @@ ask_goal_KB(kill(EnemyPos)) :-
     % If unable to explore new positions, find an enemy in the frontier and kill it
     bagof(
         (Count, Distance, OneEnemyPos),
-        AP^Path^(
+        AP^(
             % Get enemy in the known frontier
             enemy_in_frontier(OneEnemyPos, Dir),
             % Get the number of cells that will unblock in up to three movements
             frontier_count(OneEnemyPos, Dir, 3, Count),
             % Get the distance in case there's two equally good enemy options
             agent_position(AP),
-            a_star(AP, OneEnemyPos, Path),
-            length(Path, Distance)
+            a_star_heuristic(AP, OneEnemyPos, Distance)
         ),
         EnemyChoices
     ),
