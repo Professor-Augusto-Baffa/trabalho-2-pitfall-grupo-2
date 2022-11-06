@@ -811,9 +811,9 @@ ask_goal_KB(kill(EnemyPos)) :-
         (Count, Distance, OneEnemyPos),
         AP^Path^(
             % Get enemy in the known frontier
-            enemy_in_frontier(OneEnemyPos),
+            enemy_in_frontier(OneEnemyPos, Dir),
             % Get the number of cells that will unblock in up to three movements
-            frontier_count(OneEnemyPos, 3, Count),
+            frontier_count(OneEnemyPos, Dir, 3, Count),
             % Get the distance in case there's two equally good enemy options
             agent_position(AP),
             a_star(AP, OneEnemyPos, Path),
@@ -859,11 +859,12 @@ next_position_to_explore([Failed | QueueTail], Explored, Pos) :-
     !,
     next_position_to_explore(QueueTail, [Failed | Explored], Pos).
 
-% enemy_in_frontier/1
-% enemy_in_frontier(-EnemyPos)
+% enemy_in_frontier/2
+% enemy_in_frontier(-EnemyPos, -Direction)
 % Returns the position of an enemy that is on the frontier of known cells,
-% meaning that the agents knows nothing about cells "after" the enemy.
-enemy_in_frontier(EnemyPos) :-
+% meaning that the agents knows nothing about cells "after" the enemy. 
+% Direction is the direction from the EnemyPos to an unknown position.
+enemy_in_frontier(EnemyPos, Backwards) :-
     % Get a position where there is surely an enemy
     (certain(enemy, EnemyPos) ; certain(teleporter, EnemyPos)),
     % With an adjacent safe position
@@ -874,7 +875,22 @@ enemy_in_frontier(EnemyPos) :-
     clockwise(Perp, Backwards),
     adjacent(EnemyPos, UnexploredPos, Backwards),
     % ...that the agent knows nothing about
-    \+ certain(_, UnexploredPos).
+    unknown(UnexploredPos).
+
+unknown(Pos) :-
+    maybe_valid_position(Pos),
+    \+certain(visited, Pos),
+    \+certain(no_enemy, Pos),
+    \+certain(no_teleporter, Pos),
+    \+certain(no_pit, Pos),
+    \+certain(enemy, Pos),
+    \+certain(teleporter, Pos),
+    \+certain(pit, Pos),
+    \+possible_position(enemy, Pos),
+    \+possible_position(teleporter, Pos),
+    \+possible_position(pit, Pos),
+    !.
+
 %
 % Actions
 % -------
@@ -1093,49 +1109,49 @@ a_star_heuristic((X0, Y0), (X1, Y1), H) :-
 
 
 
-% frontier_count/3
-% frontier_count(+Origin, +Rounds, -Count)
+% frontier_count/4
+% frontier_count(+Origin, +Dir, +Rounds, -Count)
 % Counts how many new cells can be explored from Origin in up to Rounds moves
-frontier_count(Origin, Rounds, Count) :-
-    frontier_extend(Origin, Rounds, ExtendedFrontier),
+frontier_count(Origin, Dir, Rounds, Count) :-
+    frontier_extend(Origin, Dir, Rounds, ExtendedFrontier),
     length(ExtendedFrontier, Count),
     !.
 
-% frontier_extend/3
-% frontier_extend(+Origin, +Rounds, -Frontier)
-% Gets a list of unknown cells that can be visited in up to Rounds moves from Origin
-frontier_extend(Origin, Rounds, Frontier) :-
-    frontier_extend([(Origin, 0)], [], Rounds, Frontier),
+% frontier_extend/4
+% frontier_extend(+Pos, +Dir, +Steps, -Reacheable)
+% Gets a list of unknown cells that can be visited in up to Steps moves from an agent
+% located at Pos and facing Dir
+frontier_extend(_, _, 0, []) :- !.
+frontier_extend(Pos, Dir, Steps, Reacheable) :-
+    frontier_extend_(Pos, Dir, Steps, R1),
+    delete(R1, Pos, Reacheable),
     !.
 
-% frontier_extend/4
-% frontier_extend(+Queue, +Explored, +MaxDepth, -ExtendedFrontier)
-frontier_extend([], _, _, []).
-frontier_extend([(_, MaxDepth) | QueueTail], Explored, MaxDepth, Frontier) :-
-    frontier_extend(QueueTail, Explored, MaxDepth, Frontier),
-    !.
-frontier_extend([(Origin, Depth) | QueueTail], Explored, MaxDepth, Frontier) :-
-    NextDepth is Depth + 1,
+% frontier_extend(Pos, Dir, Steps, Reacheable)
+frontier_extend_(Pos, _, 0, R) :-
+    (   maybe_valid_position(Pos)
+    ->  R = [Pos]
+    ;   R = []
+    ), !.
+frontier_extend_(Pos, Dir, Steps, Reacheable) :-
+    adjacent(Pos, NextPos, Dir),
+    clockwise(Dir, NextDir),
+    NextSteps is Steps - 1,
+    frontier_extend_(NextPos, Dir, NextSteps, R1),
+    frontier_extend_(Pos, NextDir, NextSteps, R2),
     setof(
-        (Neighbour, NextDepth),
-        Dir^(
-            adjacent(Origin, Neighbour, Dir),
-            maybe_valid_position(Neighbour),
-            \+ member(Neighbour, Explored),
-            \+ member(Neighbour, QueueTail),
-            \+ certain(_, Neighbour)
-        ),
-        QueueAdd
+        P,
+        (member(P, R1) ; member(P, R2)),
+        Reacheable
     ),
-    append(QueueTail, QueueAdd, Queue),
-    frontier_extend(Queue, [Origin | Explored], MaxDepth, PartialFrontier),
-    append([Origin], PartialFrontier, Frontier),
     !.
+frontier_extend_(_, _, _, []).
 
 % For testing only
 % Runs the algorithm until finding a gold position
 run_until_pickup_or_shoot :-
-    sense_learn_act(_, A),
+    sense_learn_act(G, A),
+    format('G = ~w~nA = ~w~n', [G, A]),
     print_cave,
     A \= pick_up,
     A \= shoot,
