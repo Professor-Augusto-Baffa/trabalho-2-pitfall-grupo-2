@@ -28,7 +28,7 @@ class Player ():
         else:
             print("Erro na direcao do movimento")
         print(self.pos_matriz)
-    
+
     def rotate(self):
         self.dir -= 1
         if self.dir < 0:

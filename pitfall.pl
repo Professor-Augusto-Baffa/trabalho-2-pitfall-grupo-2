@@ -305,7 +305,7 @@ sense_flash(no_flash).
 
 % sense_glow/1
 % sense_glow(-Glow)
-% glow if gold in agent's cell
+% glow if gold in agents cell
 sense_glow(glow) :-
     world_position(agent, AP),
     world_position(gold, AP).
