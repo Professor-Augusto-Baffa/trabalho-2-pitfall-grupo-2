@@ -16,6 +16,7 @@
 % 5. Shooting: -10
 
 :- use_module(a_star).
+:- use_module(logging).
 
 :- dynamic([
     world_position/2,
@@ -143,88 +144,88 @@ print_cave_line(Y) :-
     minX(MinX), maxX(MaxX),
     between(MinX, MaxX, X),
     print_cave_cell(X, Y),
-    write(' '),
+    log(' '),
     fail.
-print_cave_line(_) :- nl.
+print_cave_line(_) :- log('~n').
 print_cave_cell(X, Y) :-
     world_position(agent, (X, Y)),
     facing(north),
-    write('\033[48;5;35m^\033[0m'),
+    log('\033[48;5;35m^\033[0m'),
     !.
 print_cave_cell(X, Y) :-
     world_position(agent, (X, Y)),
     facing(east),
-    write('\033[48;5;35m>\033[0m'),
+    log('\033[48;5;35m>\033[0m'),
     !.
 print_cave_cell(X, Y) :-
     world_position(agent, (X, Y)),
     facing(west),
-    write('\033[48;5;35m<\033[0m'),
+    log('\033[48;5;35m<\033[0m'),
     !.
 print_cave_cell(X, Y) :-
     world_position(agent, (X, Y)),
     facing(south),
-    write('\033[48;5;35mv\033[0m'),
+    log('\033[48;5;35mv\033[0m'),
     !.
 print_cave_cell(X, Y) :-
     certain(visited, (X,Y)),
-    write('\033[48;5;231m\033[38;5;0m.\033[0m'),
+    log('\033[48;5;231m\033[38;5;0m.\033[0m'),
     !.
 print_cave_cell(X, Y) :-
     certain(safe, (X,Y)),
-    write('\033[48;5;231m\033[38;5;0mS\033[0m'),
+    log('\033[48;5;231m\033[38;5;0mS\033[0m'),
     !.
 print_cave_cell(X, Y) :-
     certain(pit, (X,Y)),
-    write('\033[48;5;238mP\033[0m'),
+    log('\033[48;5;238mP\033[0m'),
     !.
 print_cave_cell(X, Y) :-
     certain(enemy, (X,Y)),
-    write('\033[48;5;208mD\033[0m'),
+    log('\033[48;5;208mD\033[0m'),
     !.
 print_cave_cell(X, Y) :-
     certain(teleporter, (X,Y)),
-    write('\033[48;5;26mT\033[0m'),
+    log('\033[48;5;26mT\033[0m'),
     !.
 print_cave_cell(X, Y) :-
     certain(gold, (X,Y)),
-    write('\033[48;5;220mO\033[0m'),
+    log('\033[48;5;220mO\033[0m'),
     !.
 print_cave_cell(X, Y) :-
     possible_position(pit, (X,Y), _),
     possible_position(enemy, (X,Y), _),
     possible_position(teleporter, (X,Y), _),
-    write('+'),
+    log('+'),
     !.
 print_cave_cell(X, Y) :-
     possible_position(pit, (X,Y), _),
     possible_position(enemy, (X,Y), _),
-    write('+'),
+    log('+'),
     !.
 print_cave_cell(X, Y) :-
     possible_position(pit, (X,Y), _),
     possible_position(teleporter, (X,Y), _),
-    write('+'),
+    log('+'),
     !.
 print_cave_cell(X, Y) :-
     possible_position(enemy, (X,Y), _),
     possible_position(teleporter, (X,Y), _),
-    write('+'),
+    log('+'),
     !.
 print_cave_cell(X, Y) :-
     possible_position(pit, (X,Y), _),
-    write('\033[48;5;238mp\033[0m'),
+    log('\033[48;5;238mp\033[0m'),
     !.
 print_cave_cell(X, Y) :-
     possible_position(enemy, (X,Y), _),
-    write('\033[48;5;208md\033[0m'),
+    log('\033[48;5;208md\033[0m'),
     !.
 print_cave_cell(X, Y) :-
     possible_position(teleporter, (X,Y), _),
-    write('\033[48;5;26mt\033[0m'),
+    log('\033[48;5;26mt\033[0m'),
     !.
 print_cave_cell(_, _) :-
-    write('\033[48;5;0m\033[38;5;0m?\033[0m'),
+    log('\033[48;5;0m\033[38;5;0m?\033[0m'),
     !.
 
 %
@@ -235,14 +236,15 @@ print_cave_cell(_, _) :-
 % sense_learn_act(-Goal, -Action)
 % Learns from the environment and acts accordingly, returning the current Goal and the Action it performed
 sense_learn_act(Goal, Action) :-
-    format('-----~n'),
+    log('-----~n'),
     sense_environment(Sensors), write_sensors(Sensors),
     clear_transient_flags,
-    format('Learning:~n'),
+    log('Learning:~n'),
     update_knowledge(Sensors),
     update_goal,
     goal(Goal),
     next_action(Goal, Action),
+    print_cave,
     perform_action(Action),
     !.
 
@@ -274,7 +276,7 @@ write_sensors(Sensors) :-
     agent_position(AP),
     world_position(agent, ActualAP),
     facing(Dir),
-    format('Agent~n~t~2|at: ~w~n~t~2|sensing: ~w~nWorld~n~t~2|agent at: ~w~n~t~2|facing: ~w~n', [AP, Sensors, ActualAP, Dir]),
+    log('Agent~n~t~2|at: ~w~n~t~2|sensing: ~w~nWorld~n~t~2|agent at: ~w~n~t~2|facing: ~w~n', [AP, Sensors, ActualAP, Dir]),
     !.
 
 % sense_steps/1
@@ -422,7 +424,7 @@ update_knowledge(Sensors) :-
 set_visited_cell :-
     agent_position(AP),
     assert_new(certain(visited, AP)),
-    format('~t~2|visited: ~w~n', [AP]).
+    log('~t~2|visited: ~w~n', [AP]).
 
 % update_steps/1
 % update_steps(+Steps)
@@ -540,7 +542,7 @@ update_glow(Glow) :-
 update_gold(glow) :-
     agent_position(AP),
     assert_new(certain(gold, AP)),
-    format('~t~2|gold position: ~w~n', [AP]).
+    log('~t~2|gold position: ~w~n', [AP]).
 update_gold(no_glow) :-
     agent_position(AP),
     % Retract in case we collected gold from this position
@@ -560,7 +562,7 @@ update_impact(impact) :-
     adjacent(AP, PrevPos, Backwards),
     retractall(agent_position(_)),
     assertz(agent_position(PrevPos)),
-    format('~t~2|agent position: ~w~n', [PrevPos]),
+    log('~t~2|agent position: ~w~n', [PrevPos]),
     % Learn cave bounds
     learn_cave_bounds.
 
@@ -610,7 +612,7 @@ learn(safe, P) :-
     fail.
 learn(safe, P) :-
     assert_new(certain(safe, P)),
-    format('~t~2|safe: ~w~n', [P]).
+    log('~t~2|safe: ~w~n', [P]).
 learn(killed_enemy, P) :-
     % If killed normal enemy
     certain(enemy, P),
@@ -709,7 +711,7 @@ learn_cave_bounds :-
 
 review_lt_min_x_assumptions :-
     certain(minX, MinX),
-    format('~t~2|X >= ~w~n', [MinX]),
+    log('~t~2|X >= ~w~n', [MinX]),
     (possible_position(_, (X, _), _) ; certain(_, (X, _))),
     X < MinX,
     retractall(possible_position(_, (X, _), _)),
@@ -719,7 +721,7 @@ review_lt_min_x_assumptions.
 
 review_lt_min_y_assumptions :-
     certain(minY, MinY),
-    format('~t~2|Y >= ~w~n', [MinY]),
+    log('~t~2|Y >= ~w~n', [MinY]),
     (possible_position(_, (_, Y), _) ; certain(_, (_, Y))),
     Y < MinY,
     retractall(possible_position(_, (_, Y), _)),
@@ -729,7 +731,7 @@ review_lt_min_y_assumptions.
 
 review_gt_max_x_assumptions :-
     certain(maxX, MaxX),
-    format('~t~2|X <= ~w~n', [MaxX]),
+    log('~t~2|X <= ~w~n', [MaxX]),
     (possible_position(_, (X, _), _) ; certain(_, (X, _))),
     X > MaxX,
     retractall(possible_position(_, (X, _), _)),
@@ -738,7 +740,7 @@ review_gt_max_x_assumptions.
 
 review_gt_max_y_assumptions :-
     certain(maxY, MaxY),
-    format('~t~2|Y <= ~w~n', [MaxY]),
+    log('~t~2|Y <= ~w~n', [MaxY]),
     (possible_position(_, (_, Y), _) ; certain(_, (_, Y))),
     Y > MaxY,
     retractall(possible_position(_, (_, Y), _)),
@@ -1087,7 +1089,7 @@ a_star_heuristic((X0, Y0), (X1, Y1), H) :-
 a_star_extend(Goal, Origin, Next) :-
     adjacent(Origin, Next, _),
     maybe_valid_position(Next),
-    (Next = Goal ; certain(visited, Next)).
+    (Next = Goal ; certain(safe, Next)).
 
 
 % frontier_count/4
@@ -1132,8 +1134,7 @@ frontier_extend_(_, _, _, []).
 % Runs the algorithm until finding a gold position
 run_until_done :-
     sense_learn_act(G, A),
-    format('G = ~w~nA = ~w~n', [G, A]),
-    print_cave,
+    log('G = ~w~nA = ~w~n', [G, A]),
     A \= step_out,
     run_until_done,
     !.
