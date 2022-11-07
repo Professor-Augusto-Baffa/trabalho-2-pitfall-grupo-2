@@ -17,7 +17,7 @@
 
 :- dynamic([
     world_position/2,
-    possible_position/2,
+    possible_position/3,
     agent_position/1,
     facing/1,
     hit_wall/0,
@@ -189,36 +189,36 @@ print_cave_cell(X, Y) :-
     write('\033[48;5;220mO\033[0m'),
     !.
 print_cave_cell(X, Y) :-
-    possible_position(pit, (X,Y)),
-    possible_position(enemy, (X,Y)),
-    possible_position(teleporter, (X,Y)),
+    possible_position(pit, (X,Y), _),
+    possible_position(enemy, (X,Y), _),
+    possible_position(teleporter, (X,Y), _),
     write('+'),
     !.
 print_cave_cell(X, Y) :-
-    possible_position(pit, (X,Y)),
-    possible_position(enemy, (X,Y)),
+    possible_position(pit, (X,Y), _),
+    possible_position(enemy, (X,Y), _),
     write('+'),
     !.
 print_cave_cell(X, Y) :-
-    possible_position(pit, (X,Y)),
-    possible_position(teleporter, (X,Y)),
+    possible_position(pit, (X,Y), _),
+    possible_position(teleporter, (X,Y), _),
     write('+'),
     !.
 print_cave_cell(X, Y) :-
-    possible_position(enemy, (X,Y)),
-    possible_position(teleporter, (X,Y)),
+    possible_position(enemy, (X,Y), _),
+    possible_position(teleporter, (X,Y), _),
     write('+'),
     !.
 print_cave_cell(X, Y) :-
-    possible_position(pit, (X,Y)),
+    possible_position(pit, (X,Y), _),
     write('\033[48;5;238mp\033[0m'),
     !.
 print_cave_cell(X, Y) :-
-    possible_position(enemy, (X,Y)),
+    possible_position(enemy, (X,Y), _),
     write('\033[48;5;208md\033[0m'),
     !.
 print_cave_cell(X, Y) :-
-    possible_position(teleporter, (X,Y)),
+    possible_position(teleporter, (X,Y), _),
     write('\033[48;5;26mt\033[0m'),
     !.
 print_cave_cell(_, _) :-
@@ -430,7 +430,7 @@ update_enemies(steps) :-
     adjacent(AP, P, _),
     maybe_valid_position(P),
     \+ certain(no_enemy, P),
-    assert_new(possible_position(enemy, P)),
+    assert_new(possible_position(enemy, P, AP)),
     fail.
 update_enemies(steps).
 
@@ -457,7 +457,7 @@ update_pits(breeze) :-
     adjacent(AP, P, _),
     maybe_valid_position(P),
     \+ certain(no_pit, P),
-    assert_new(possible_position(pit, P)),
+    assert_new(possible_position(pit, P, AP)),
     fail.
 update_pits(breeze).
 
@@ -486,7 +486,7 @@ update_teleporter(flash) :-
     adjacent(AP, P, _),
     maybe_valid_position(P),
     \+ certain(no_teleporter, P),
-    assert_new(possible_position(teleporter, P)),
+    assert_new(possible_position(teleporter, P, AP)),
     fail.
 update_teleporter(flash).
 
@@ -542,24 +542,24 @@ update_scream(scream) :-
 % learn/2
 % learn(+Item, +Location)
 learn(no_enemy, P) :-
-    retractall(possible_position(enemy, P)),
+    retractall(possible_position(enemy, P, _)),
     retractall(certain(enemy, P)),
     assert_new(certain(no_enemy, P)).
 learn(enemy, P) :-
-    retractall(possible_position(_, P)),
+    retractall(possible_position(_, P, _)),
     assert_new(certain(enemy, P)).
 learn(no_teleporter, P) :-
-    retractall(possible_position(teleporter, P)),
+    retractall(possible_position(teleporter, P, _)),
     retractall(certain(teleporter, P)),
     assert_new(certain(no_teleporter, P)).
 learn(teleporter, P) :-
-    retractall(possible_position(_, P)),
+    retractall(possible_position(_, P, _)),
     assert_new(certain(teleporter, P)).
 learn(no_pit, P) :-
-    retractall(possible_position(pit, P)),
+    retractall(possible_position(pit, P, _)),
     assert_new(certain(no_pit, P)).
 learn(pit, P) :-
-    retractall(possible_position(_, P)),
+    retractall(possible_position(_, P, _)),
     assert_new(certain(pit, P)).
 learn(safe, P) :-
     % Do nothing if already known to be safe
@@ -567,7 +567,7 @@ learn(safe, P) :-
     !.
 learn(safe, P) :-
     member(Danger, [enemy, pit, teleporter]),
-    retractall(possible_position(Danger, P)),
+    retractall(possible_position(Danger, P, _)),
     fail.
 learn(safe, P) :-
     assert_new(certain(safe, P)),
@@ -576,8 +576,12 @@ learn(killed_enemy, P) :-
     % If killed normal enemy
     certain(enemy, P),
     adjacent(P, N, _),
+    % Retract steps observations and mark as not visited, as steps could be
+    % from another enemy
     retractall(certain(steps, N)),
     retractall(certain(visited, N)),
+    % Retract possible enemy positions caused by these steps
+    retractall(possible_position(enemy, _, N)),
     fail.
 learn(killed_enemy, P) :- certain(enemy, P),
     retractall(certain(enemy, P)),
@@ -585,8 +589,12 @@ learn(killed_enemy, P) :- certain(enemy, P),
 learn(killed_enemy, P) :-
     % If killed teleporter
     adjacent(P, N, _),
+    % Retract flash observations and mark as not visited, as flash could be
+    % from another teleporter
     retractall(certain(flash, N)),
     retractall(certain(visited, N)),
+    % Retract possible teleporter positions caused by this flash
+    retractall(possible_position(teleporter, _, N)),
     fail.
 learn(killed_enemy, P) :-
     retractall(certain(teleporter, P)),
@@ -627,9 +635,9 @@ learn_cave_bounds :-
 review_lt_min_x_assumptions :-
     certain(minX, MinX),
     format('X >= ~w~n', [MinX]),
-    (possible_position(_, (X, _)) ; certain(_, (X, _))),
+    (possible_position(_, (X, _), _) ; certain(_, (X, _))),
     X < MinX,
-    retractall(possible_position(_, (X, _))),
+    retractall(possible_position(_, (X, _), _)),
     retractall(certain(_, (X, _))),
     fail.
 review_lt_min_x_assumptions.
@@ -637,9 +645,9 @@ review_lt_min_x_assumptions.
 review_lt_min_y_assumptions :-
     certain(minY, MinY),
     format('Y >= ~w~n', [MinY]),
-    (possible_position(_, (_, Y)) ; certain(_, (_, Y))),
+    (possible_position(_, (_, Y), _) ; certain(_, (_, Y))),
     Y < MinY,
-    retractall(possible_position(_, (_, Y))),
+    retractall(possible_position(_, (_, Y), _)),
     retractall(certain(_, (_, Y))),
     fail.
 review_lt_min_y_assumptions.
@@ -647,18 +655,18 @@ review_lt_min_y_assumptions.
 review_gt_max_x_assumptions :-
     certain(maxX, MaxX),
     format('X <= ~w~n', [MaxX]),
-    (possible_position(_, (X, _)) ; certain(_, (X, _))),
+    (possible_position(_, (X, _), _) ; certain(_, (X, _))),
     X > MaxX,
-    retractall(possible_position(_, (X, _))),
+    retractall(possible_position(_, (X, _), _)),
     fail.
 review_gt_max_x_assumptions.
 
 review_gt_max_y_assumptions :-
     certain(maxY, MaxY),
     format('Y <= ~w~n', [MaxY]),
-    (possible_position(_, (_, Y)) ; certain(_, (_, Y))),
+    (possible_position(_, (_, Y), _) ; certain(_, (_, Y))),
     Y > MaxY,
-    retractall(possible_position(_, (_, Y))),
+    retractall(possible_position(_, (_, Y), _)),
     fail.
 review_gt_max_y_assumptions.
 
@@ -897,9 +905,9 @@ unknown(Pos) :-
     \+certain(enemy, Pos),
     \+certain(teleporter, Pos),
     \+certain(pit, Pos),
-    \+possible_position(enemy, Pos),
-    \+possible_position(teleporter, Pos),
-    \+possible_position(pit, Pos),
+    \+possible_position(enemy, Pos, _),
+    \+possible_position(teleporter, Pos, _),
+    \+possible_position(pit, Pos, _),
     !.
 
 %
@@ -1166,5 +1174,6 @@ run_until_pickup_or_shoot :-
     print_cave,
     A \= pick_up,
     A \= shoot,
+    A \= step_out,
     run_until_pickup_or_shoot,
     !.
