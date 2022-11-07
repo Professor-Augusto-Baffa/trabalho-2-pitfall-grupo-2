@@ -17,6 +17,7 @@
 
 :- dynamic([
     world_position/2,
+    world_count/2,
     possible_position/3,
     agent_position/1,
     facing/1,
@@ -121,8 +122,7 @@ world_position(power_up, (1, 12)).
 world_position(power_up, (2, 2)).
 world_position(power_up, (7, 7)).
 
-world_count(small_enemy, 2).
-world_count(large_enemy, 2).
+world_count(enemy, 4).
 world_count(pit, 8).
 world_count(gold, 3).
 world_count(teleporter, 4).
@@ -359,9 +359,28 @@ world_shoot :-
     facing(Dir),
     adjacent(AP, EnemyPos, Dir),
     % TODO implement damage. For now, only remove the enemy
-    retractall(world_position(small_enemy, EnemyPos)),
-    retractall(world_position(large_enemy, EnemyPos)),
-    retractall(world_position(teleporter, EnemyPos)),
+    (   world_position(small_enemy, EnemyPos)
+    ->  (   retractall(world_position(small_enemy, EnemyPos)),
+            world_count(enemy, C),
+            NC is C - 1,
+            retractall(world_count(enemy, _)),
+            assertz(world_count(enemy, NC))
+        )
+    ;   world_position(large_enemy, EnemyPos)
+    ->  (   retractall(world_position(large_enemy, EnemyPos)),
+            world_count(enemy, C),
+            NC is C - 1,
+            retractall(world_count(enemy, _)),
+            assertz(world_count(enemy, NC))
+        )
+    ;   world_position(teleporter, EnemyPos)
+    ->  (   retractall(world_position(teleporter, EnemyPos)),
+            world_count(teleporter, C),
+            NC is C - 1,
+            retractall(world_count(teleporter, _)),
+            assertz(world_count(teleporter, NC))
+        )
+    ),
     assertz(killed_enemy),
     !.
 
@@ -426,6 +445,11 @@ update_enemies(no_steps) :-
 update_enemies(no_steps).
 
 update_enemies(steps) :-
+    % If already found all enemies
+    world_count(enemy, EC),
+    aggregate_all(count, certain(enemy, _), EC),
+    !.
+update_enemies(steps) :-
     agent_position(AP),
     adjacent(AP, P, _),
     maybe_valid_position(P),
@@ -452,6 +476,11 @@ update_pits(no_breeze) :-
     fail.
 update_pits(no_breeze).
 
+update_pits(breeze) :-
+    % If already found all pits
+    world_count(pit, PC),
+    aggregate_all(count, certain(pit, _), PC),
+    !.
 update_pits(breeze) :-
     agent_position(AP),
     adjacent(AP, P, _),
@@ -481,6 +510,11 @@ update_teleporter(no_flash) :-
     fail.
 update_teleporter(no_flash) :- !.
 
+update_teleporter(flash) :-
+    % If already found all pits
+    world_count(teleporter, TC),
+    aggregate_all(count, certain(teleporter, _), TC),
+    !.
 update_teleporter(flash) :-
     agent_position(AP),
     adjacent(AP, P, _),
@@ -547,20 +581,23 @@ learn(no_enemy, P) :-
     assert_new(certain(no_enemy, P)).
 learn(enemy, P) :-
     retractall(possible_position(_, P, _)),
-    assert_new(certain(enemy, P)).
+    assert_new(certain(enemy, P)),
+    check_count(enemy).
 learn(no_teleporter, P) :-
     retractall(possible_position(teleporter, P, _)),
     retractall(certain(teleporter, P)),
     assert_new(certain(no_teleporter, P)).
 learn(teleporter, P) :-
     retractall(possible_position(_, P, _)),
-    assert_new(certain(teleporter, P)).
+    assert_new(certain(teleporter, P)),
+    check_count(teleporter).
 learn(no_pit, P) :-
     retractall(possible_position(pit, P, _)),
     assert_new(certain(no_pit, P)).
 learn(pit, P) :-
     retractall(possible_position(_, P, _)),
-    assert_new(certain(pit, P)).
+    assert_new(certain(pit, P)),
+    check_count(pit).
 learn(safe, P) :-
     % Do nothing if already known to be safe
     certain(safe, P),
@@ -599,6 +636,47 @@ learn(killed_enemy, P) :-
 learn(killed_enemy, P) :-
     retractall(certain(teleporter, P)),
     !.
+
+learn_no_more_enemies :-
+    possible_position(enemy, P, _),
+    learn(no_enemy, P),
+    fail.
+learn_no_more_enemies.
+
+learn_no_more_teleporters :-
+    possible_position(teleporter, P, _),
+    format('    No teleporter at (~w)~n', [P]),
+    learn(no_teleporter, P),
+    fail.
+learn_no_more_teleporters.
+
+learn_no_more_pits :-
+    possible_position(pit, P, _),
+    learn(no_pit, P),
+    fail.
+learn_no_more_pits.
+
+check_count(enemy) :-
+    world_count(enemy, ExistingEnemiesCount),
+    aggregate_all(count, certain(enemy, _), ExistingEnemiesCount),
+    learn_no_more_enemies.
+check_count(enemy).
+
+check_count(teleporter) :-
+    format('  check_count(teleporter)~n'),
+    world_count(teleporter, ExistingTeleporterCount),
+    format('  Existing = ~w~n', [ExistingTeleporterCount]),
+    aggregate_all(count, certain(teleporter, _), KnownTeleporterCount),
+    format('  Known = ~w~n', [KnownTeleporterCount]),
+    KnownTeleporterCount = ExistingTeleporterCount,
+    learn_no_more_teleporters.
+check_count(teleporter) :- format('  failed~n').
+
+check_count(pit) :-
+    world_count(pit, ExistingPitsCount),
+    aggregate_all(count, certain(pit, _), ExistingPitsCount),
+    learn_no_more_pits.
+check_count(pit).
 
 learn_cave_bounds :-
     facing(east),
@@ -1168,12 +1246,10 @@ frontier_extend_(_, _, _, []).
 
 % For testing only
 % Runs the algorithm until finding a gold position
-run_until_pickup_or_shoot :-
+run_until_done :-
     sense_learn_act(G, A),
     format('G = ~w~nA = ~w~n', [G, A]),
     print_cave,
-    A \= pick_up,
-    A \= shoot,
     A \= step_out,
-    run_until_pickup_or_shoot,
+    run_until_done,
     !.
