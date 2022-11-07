@@ -24,7 +24,9 @@
     killed_enemy/0,
     goal/1,
     certain/2,
-    collected/2
+    collected/2,
+    game_score/2,
+    character_health/2
 ]).
 
 % assert_new/1
@@ -224,6 +226,78 @@ print_cave_cell(X, Y) :-
 print_cave_cell(_, _) :-
     write('\033[48;5;0m\033[38;5;0m?\033[0m'),
     !.
+
+
+%
+% Health Score
+% ------
+% Agent's initial energy: 100
+% Enemies' initial energy: 100
+% TODO: Energy filled by power-ups: 20
+
+% character_health/2
+% Initializes HP for agent and enemies
+character_health(agent, 100).
+character_health(small_enemy, 100).
+character_health(large_enemy, 100).
+
+% dead/1
+% True when Character (agent or enemy) loses all HP
+dead(Character) :- character_health(Character, 0).
+
+% update_health/2
+% Updates Character health with HP given
+update_health(Character, HP) :- character_health(Character, HP).
+
+% increase_health/4
+% decrease_health/4
+% Calculate character's new HP (current HP +/- points gained) and call update_health rule
+% If character's new HP is zero, call dead rule
+increase_health(Character, HP, Points, NewHP) :- 
+    NewHP is HP+Points,
+    update_health(Character, NewHP).
+
+decrease_health(Character, HP, Points, NewHP) :-
+    NewHP is HP-Points,
+    (
+        (NewHP > 0, update_health(Character, NewHP)) ;
+        (HP =:= 0, dead(Character))
+    ).
+
+
+% 
+% Score System: Costs and Rewards
+% ------
+% 1. Pick up: +1000
+% 2. Falling in a pit: -1000
+% 3. Getting killed by an enemy: -1000
+% 4. Being attacked by an enemy: -{dammage}
+% 5. Shooting: -10
+
+% score/1
+% Inicialize game score
+game_score(agent, 0).
+
+% update_score/1
+% Update score by calling game_score
+update_score(NewScore) :- game_score(agent, NewScore).
+
+% Rules for costs and rewards
+% pick_up/0, pit_fall/0, killed/0, attacked/1, shooting/0
+pick_up :- update_score(1000).
+pit_fall :- update_score(-1000).
+killed :- update_score(-1000).
+attacked(Damage) :- update_score(Damage).
+shooting :- update_score(-10).
+
+
+%
+% TODO: Attack System
+% ----
+
+% Ammo damage: random between 20 and 50
+% Ammo count: 5
+
 
 %
 % Observation and decision making
