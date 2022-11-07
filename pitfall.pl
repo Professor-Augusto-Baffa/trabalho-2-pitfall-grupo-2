@@ -376,7 +376,6 @@ clear_transient_flags :-
     retractall(killed_enemy).
 
 % TODO: invalidate observations around a killed enemy
-% TODO: choose closer positions to explore
 
 %
 % Update knowledge
@@ -390,11 +389,11 @@ update_knowledge(Sensors) :-
     Sensors = (Steps, Breeze, Flash, Glow, Impact, Scream),
     % Update impact first in case the wall was hit in the previous step
     update_impact(Impact),
+    update_scream(Scream),
     update_steps(Steps),
     update_breeze(Breeze),
     update_flash(Flash),
     update_glow(Glow),
-    update_scream(Scream),
     set_visited_cell,
     infer_dangerous_positions,
     infer_safe_positions.
@@ -537,8 +536,7 @@ update_scream(scream) :-
     facing(Dir),
     adjacent(AP, P, Dir),
     maybe_valid_position(P),
-    learn(no_enemy, P),
-    learn(no_teleporter, P).
+    learn(killed_enemy, P).
 
 
 % learn/2
@@ -574,7 +572,25 @@ learn(safe, P) :-
 learn(safe, P) :-
     assert_new(certain(safe, P)),
     format('~t~2|safe: ~w~n', [P]).
-
+learn(killed_enemy, P) :-
+    % If killed normal enemy
+    certain(enemy, P),
+    adjacent(P, N, _),
+    retractall(certain(steps, N)),
+    retractall(certain(visited, N)),
+    fail.
+learn(killed_enemy, P) :- certain(enemy, P),
+    retractall(certain(enemy, P)),
+    !.
+learn(killed_enemy, P) :-
+    % If killed teleporter
+    adjacent(P, N, _),
+    retractall(certain(flash, N)),
+    retractall(certain(visited, N)),
+    fail.
+learn(killed_enemy, P) :-
+    retractall(certain(teleporter, P)),
+    !.
 
 learn_cave_bounds :-
     facing(east),
@@ -800,10 +816,6 @@ ask_goal_KB(leave) :-
 ask_goal_KB(reach(Pos)) :-
     next_position_to_explore(Pos),
     !.
-    % certain(safe, Pos),
-    % maybe_valid_position(Pos),
-    % \+certain(visited, Pos),
-    % !.
 
 ask_goal_KB(kill(EnemyPos)) :-
     % If unable to explore new positions, find an enemy in the frontier and kill it
