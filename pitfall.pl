@@ -15,6 +15,8 @@
 % 4. Being attacked by an enemy: -{dammage}
 % 5. Shooting: -10
 
+:- use_module(a_star).
+
 :- dynamic([
     world_position/2,
     world_count/2,
@@ -645,7 +647,6 @@ learn_no_more_enemies.
 
 learn_no_more_teleporters :-
     possible_position(teleporter, P, _),
-    format('    No teleporter at (~w)~n', [P]),
     learn(no_teleporter, P),
     fail.
 learn_no_more_teleporters.
@@ -663,14 +664,10 @@ check_count(enemy) :-
 check_count(enemy).
 
 check_count(teleporter) :-
-    format('  check_count(teleporter)~n'),
     world_count(teleporter, ExistingTeleporterCount),
-    format('  Existing = ~w~n', [ExistingTeleporterCount]),
-    aggregate_all(count, certain(teleporter, _), KnownTeleporterCount),
-    format('  Known = ~w~n', [KnownTeleporterCount]),
-    KnownTeleporterCount = ExistingTeleporterCount,
+    aggregate_all(count, certain(teleporter, _), ExistingTeleporterCount),
     learn_no_more_teleporters.
-check_count(teleporter) :- format('  failed~n').
+check_count(teleporter).
 
 check_count(pit) :-
     world_count(pit, ExistingPitsCount),
@@ -712,7 +709,7 @@ learn_cave_bounds :-
 
 review_lt_min_x_assumptions :-
     certain(minX, MinX),
-    format('X >= ~w~n', [MinX]),
+    format('~t~2|X >= ~w~n', [MinX]),
     (possible_position(_, (X, _), _) ; certain(_, (X, _))),
     X < MinX,
     retractall(possible_position(_, (X, _), _)),
@@ -722,7 +719,7 @@ review_lt_min_x_assumptions.
 
 review_lt_min_y_assumptions :-
     certain(minY, MinY),
-    format('Y >= ~w~n', [MinY]),
+    format('~t~2|Y >= ~w~n', [MinY]),
     (possible_position(_, (_, Y), _) ; certain(_, (_, Y))),
     Y < MinY,
     retractall(possible_position(_, (_, Y), _)),
@@ -732,7 +729,7 @@ review_lt_min_y_assumptions.
 
 review_gt_max_x_assumptions :-
     certain(maxX, MaxX),
-    format('X <= ~w~n', [MaxX]),
+    format('~t~2|X <= ~w~n', [MaxX]),
     (possible_position(_, (X, _), _) ; certain(_, (X, _))),
     X > MaxX,
     retractall(possible_position(_, (X, _), _)),
@@ -741,7 +738,7 @@ review_gt_max_x_assumptions.
 
 review_gt_max_y_assumptions :-
     certain(maxY, MaxY),
-    format('Y <= ~w~n', [MaxY]),
+    format('~t~2|Y <= ~w~n', [MaxY]),
     (possible_position(_, (_, Y), _) ; certain(_, (_, Y))),
     Y > MaxY,
     retractall(possible_position(_, (_, Y), _)),
@@ -1024,7 +1021,7 @@ next_action(reach(Pos), Action) :-
     % If goal is to reach a position and the agent is not next to the position
     % try to reach an adjacent position
     agent_position(AP),
-    a_star(AP, Pos, [Next | _]),
+    a_star(AP, Pos, a_star_heuristic, a_star_extend, [Next | _]),
     next_action(reach(Next), Action),
     !.
 next_action(leave, step_out) :-
@@ -1077,126 +1074,9 @@ perform_action(pick_up) :-
     world_pick_up.
 perform_action(step_out). % Nothing to do
 perform_action(shoot) :-
-    format('SHOOT~n'),
     world_shoot,
     !.
 
-% bfs/3
-% bfs(+Origin, +Goal, -Path)
-% Runs a bfs from a safe node to a possibly unsafe node, using a visited path
-bfs(Origin, Goal, Path) :-
-    reverse_bfs(Goal, [[Origin]], S),
-    reverse(S, [Origin | Path]),
-    !.
-
-% reverse_bfs/3
-% reverse_bfs(+Goal, +PathsQueue, -Path)
-% Starts with PathsQueue as [[Origin]] and expands a bfs. When done, Path
-% is the path from Goal to Origin (the reverse path from origin to Goal).
-reverse_bfs(Goal, [[Goal | Path] | _], [Goal | Path]).
-reverse_bfs(Goal, [CurrentPath | QueuedPaths], Solution) :-
-    bfs_extend(CurrentPath, Goal, CurrentPathExtended),
-    append(QueuedPaths, CurrentPathExtended, NewQueue),
-    reverse_bfs(Goal, NewQueue, Solution).
-reverse_bfs(Goal, [_ | QueueTail], Solution) :-
-    % If bfs_extend fails in the previous case,
-    % then the first path does not lead to the Goal and cannot be further extended,
-    % so drop it from the queue.
-    reverse_bfs(Goal, QueueTail, Solution).
-
-% bfs_extend/3
-% bfs_extend(+Path, +Goal, -ExtendedPaths)
-% Extends a known Path with its valid neighbours. An adjacent cell is included
-% in the path if it is visited or if it is the goal.
-bfs_extend([Origin | Path], Goal, ExtendedPaths)  :-
-    setof(
-        [Next, Origin | Path],
-        Next^Dir^Goal^(
-            adjacent(Origin, Next, Dir),
-            \+ member(Next, [Origin | Path]),
-            maybe_valid_position(Next),
-            (Next = Goal ; certain(visited, Next))
-        ),
-        ExtendedPaths
-    ),
-    !.
-
-% a_star/3
-% a_star(+Origin, +Goal, -Path)
-% Runs an a-star-like algorithm from a safe node to a possibly unsafe node, using a visited path
-a_star(Origin, Goal, Path) :-
-    a_star_heuristic(Origin, Goal, StartH),
-    reverse_a_star(Goal, [([Origin], StartH)], S),
-    reverse(S, [Origin | Path]),
-    !.
-
-% reverse_a_star/3
-% reverse_a_star(+Goal, +Queue, -Path)
-% Runs an a-star-like algorithm and returns the reversed best path to the Goal.
-% The first call receives [([Origin], Heuristic)] as the Queue, where Heuristic is
-% the estimated cost from Origin to Goal.
-reverse_a_star(Goal, [([Goal | Path], _) | _], [Goal | Path]).
-reverse_a_star(Goal, [(CurrentPath, _) | QueuedPaths], Solution) :-
-    a_star_extend(CurrentPath, Goal, CurrentPathExtended),
-    a_star_push_all(QueuedPaths, CurrentPathExtended, NewQueue),
-    reverse_a_star(Goal, NewQueue, Solution).
-reverse_a_star(Goal, [_ | QueueTail], Solution) :-
-    % If a_star_extend fails in the previous case,
-    % then the first path does not lead to the Goal and cannot be further extended,
-    % so drop it from the queue.
-    reverse_a_star(Goal, QueueTail, Solution).
-
-% a_star_push/3
-% a_star_push(+PathPair, +Frontier, -NewFrontier)
-% PathPair is a tuple (Path, TotalEstimatedPathCost)
-% Pushes a PathPair to the Frontier keeping it sorted by estimated cost
-a_star_push((Nodes, EstCost), [], [(Nodes, EstCost)]) :- !.
-a_star_push(
-    (Nodes, EC),
-    [(FirstNodes, EC_f) | FrontierTail], [(Nodes, EC), (FirstNodes, EC_f) | FrontierTail]
-) :-
-    EC < EC_f,
-    !.
-a_star_push((Nodes, EstCost), [FirstNodePair | FrontierTail], [FirstNodePair | NewTail]) :-
-    a_star_push((Nodes, EstCost), FrontierTail, NewTail),
-    !.
-
-% a_star_push_all/3
-% a_star_push_all(+PathPairList, +Frontier, -NewFrontier)
-% PathPairList is list of tuples (Path, TotalEstimatedPathCost)
-% Pushes each PathPair to the Frontier keeping it sorted by estimated cost
-a_star_push_all([], Frontier, Frontier).
-a_star_push_all([FirstPair | PathPais], Frontier, NewFrontier) :-
-    a_star_push(FirstPair, Frontier, PartialFrontier),
-    a_star_push_all(PathPais, PartialFrontier, NewFrontier),
-    !.
-
-% a_star_extend/3
-% a_star_extend(+Path, +Goal, -ExtendedPathPairs)
-% ExtendedPathPairs is a list of tuples (Path, EstimatedCost) that includes the
-% new paths reacheable from Origin
-a_star_extend([Origin | Path], Goal, ExtendedPathPairs)  :-
-    setof(
-        ([Next, Origin | Path], EstCost),
-        Next^Dir^Goal^(
-            adjacent(Origin, Next, Dir),
-            \+ member(Next, [Origin | Path]),
-            maybe_valid_position(Next),
-            (Next = Goal ; certain(visited, Next)),
-            a_star_path_heuristic([Next, Origin | Path], Goal, EstCost)
-        ),
-        ExtendedPathPairs
-    ),
-    !.
-
-% a_star_path_heuristic/3
-% a_star_path_heuristic(+Path, +Goal, -EstCost)
-% Returns the known path cost plus the heuristic from the current Path end to the Goal
-a_star_path_heuristic([Next | Path], Goal, EstCost) :-
-    length(Path, L),
-    a_star_heuristic(Next, Goal, H),
-    EstCost is L + H,
-    !.
 
 % a_star_heuristic/3
 % a_star_heuristic(+Origin, +Goal, -EstCost)
@@ -1204,6 +1084,10 @@ a_star_path_heuristic([Next | Path], Goal, EstCost) :-
 a_star_heuristic((X0, Y0), (X1, Y1), H) :-
     H is abs(Y1 - Y0) + abs(X1 - X0).
 
+a_star_extend(Goal, Origin, Next) :-
+    adjacent(Origin, Next, _),
+    maybe_valid_position(Next),
+    (Next = Goal ; certain(visited, Next)).
 
 
 % frontier_count/4
@@ -1224,7 +1108,7 @@ frontier_extend(Pos, Dir, Steps, Reacheable) :-
     delete(R1, Pos, Reacheable),
     !.
 
-% frontier_extend(Pos, Dir, Steps, Reacheable)
+% frontier_extend_(+Pos, +Dir, +Steps, -Reacheable)
 frontier_extend_(Pos, _, 0, R) :-
     (   maybe_valid_position(Pos)
     ->  R = [Pos]
@@ -1253,3 +1137,4 @@ run_until_done :-
     A \= step_out,
     run_until_done,
     !.
+run_until_done.
