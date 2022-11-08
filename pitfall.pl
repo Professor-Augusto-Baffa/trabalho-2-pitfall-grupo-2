@@ -15,6 +15,19 @@
 % 4. Being attacked by an enemy: -{dammage}
 % 5. Shooting: -10
 
+:- module(pitfall, [
+    sense/1,
+    learn/3,
+    act/1,
+    sense_learn_act/2,
+    print_cave/0,
+    disable_logging/0,
+    enable_logging/0,
+    force_update_position/1,
+    certain/2,
+    run_until_done/0
+]).
+
 :- use_module(a_star).
 :- use_module(logging).
 
@@ -30,6 +43,8 @@
     certain/2,
     collected/2
 ]).
+
+:- enable_logging.
 
 % assert_new/1
 % assert_new(+Term)
@@ -237,16 +252,31 @@ print_cave_cell(_, _) :-
 % Learns from the environment and acts accordingly, returning the current Goal and the Action it performed
 sense_learn_act(Goal, Action) :-
     log('-----~n'),
-    sense_environment(Sensors), write_sensors(Sensors),
-    clear_transient_flags,
+    sense(Sensors),
     log('Learning:~n'),
-    update_knowledge(Sensors),
-    update_goal,
-    goal(Goal),
-    next_action(Goal, Action),
+    learn(Sensors, Goal, Action),
     print_cave,
-    perform_action(Action),
-    !.
+    log('G = ~w~nA = ~w~n', [Goal, Action]),
+    act(Action).
+
+% sense/1
+% sense(-Sensors)
+sense(Sensors) :-
+    sense_environment(Sensors),
+    write_sensors(Sensors).
+
+% learn/3
+% learn(+Sensors, -Goal, -Action)
+learn(Sensors, Goal, Action) :-
+    update_knowledge(Sensors),
+    update_goal(Goal),
+    next_action(Goal, Action).
+
+% act/1
+% act(+Action)
+act(Action) :-
+    clear_transient_flags,
+    perform_action(Action).
 
 
 % Sensors
@@ -624,11 +654,9 @@ learn(killed_enemy, P) :-
     % Retract possible enemy positions caused by these steps
     retractall(possible_position(enemy, _, N)),
     fail.
-learn(killed_enemy, P) :- certain(enemy, P),
-    retractall(certain(enemy, P)),
-    !.
 learn(killed_enemy, P) :-
     % If killed teleporter
+    certain(teleporter, P),
     adjacent(P, N, _),
     % Retract flash observations and mark as not visited, as flash could be
     % from another teleporter
@@ -638,7 +666,10 @@ learn(killed_enemy, P) :-
     retractall(possible_position(teleporter, _, N)),
     fail.
 learn(killed_enemy, P) :-
+    retractall(certain(enemy, P)),
+    assertz(certain(no_enemy, P)),
     retractall(certain(teleporter, P)),
+    assertz(certain(no_teleporter, P)),
     !.
 
 learn_no_more_enemies :-
@@ -752,7 +783,6 @@ review_gt_max_y_assumptions.
 % Used for enemies, teleporters and pits.
 % Eg. If there were steps at one cell with 4 neighbors and the agent is certain that 3
 % of those have no enemies, than the enemy has to be on the fourth one.
-% TODO: Take into account the maximum number of enemies and certainties to infer possibilities
 infer_dangerous_positions :-
     % For each danger trio (Hint, NotThere, There)
     % e.g. (steps, no_enemy, enemy) or (breeze, no_pit, pit)
@@ -845,45 +875,47 @@ maybe_valid_max_y(_).
 % Update goal
 % -----------
 
-update_goal :-
-    % If the goal is to leave, don't change it
-    goal(leave).
-update_goal :-
+% update_goal/1
+% update_goal(-NewGoal)
+update_goal(NewGoal) :-
+    goal(Goal),
+    update_goal(Goal, NewGoal),
+    !.
+update_goal(NewGoal) :-
+    update_goal(none, NewGoal).
+
+% update_goal/2
+% update_goal(+CurrGoal, -NewGoal)
+update_goal(leave, leave).
+update_goal(reach(Pos), NewGoal) :-
     % If the goal is to reach an invalid position, remove goal and backtrack
-    goal(reach(Pos)),
     \+ maybe_valid_position(Pos),
     retractall(goal(_)),
-    fail.
-update_goal :-
+    update_goal(none, NewGoal).
+update_goal(kill(Pos), NewGoal) :-
     % If the goal is to kill an enemy, and the enemy has been killed, remove goal and backtrack
-    goal(kill(Pos)),
     certain(no_enemy, Pos),
+    certain(no_teleporter, Pos),
     retractall(goal(_)),
-    fail.
-update_goal :-
+    update_goal(none, NewGoal).
+update_goal(none, NewGoal) :-
     % If no goal, set a new one
-    \+ goal(_),
-    ask_goal_KB(Goal),
-    set_goal(Goal),
+    ask_goal_KB(NewGoal),
+    set_goal(NewGoal),
     !.
-update_goal :-
+update_goal(reach(Pos), NewGoal) :-
     % If goal is reach, and position is reached, get new goal
-    goal(reach(P)),
-    agent_position(P),
+    agent_position(Pos),
     retractall(goal(_)),
-    ask_goal_KB(Goal),
-    set_goal(Goal),
+    ask_goal_KB(NewGoal),
+    set_goal(NewGoal),
     !.
-update_goal :-
+update_goal(reach(Pos), reach(Pos)) :-
     % If goal is reach, and haven't reached yet, don't change goal
-    goal(reach(_)),
     !.
-update_goal :-
+update_goal(kill(Pos), kill(Pos)) :-
     % If the goal is to kill an enemy that hasn't been killed, keep it
-    goal(kill(_)),
     !.
-% For now, only `reach` goals. Later, if no cells are available and we are certain of enemy positions,
-% we could set a goal to kill an enemy at a given position to unblock new areas
 
 % set_goal/1
 % set_goal(+Goal)
@@ -891,7 +923,7 @@ set_goal(Goal) :-
     retractall(goal(_)),
     assertz(goal(Goal)).
 
-% TODO: implement goal choice
+
 ask_goal_KB(leave) :-
     % If collected all gold, leave the cave
     world_count(gold, GC),
@@ -1062,18 +1094,21 @@ perform_action(move_forward) :-
     adjacent(AP, NP, Direction),
     retractall(agent_position(_)),
     assertz(agent_position(NP)),
-    world_step.
+    world_step,
+    !.
 perform_action(turn_clockwise) :-
     facing(Direction),
     clockwise(Direction, NewDirection),
     retractall(facing(_)),
-    assertz(facing(NewDirection)).
+    assertz(facing(NewDirection)),
+    !.
 perform_action(pick_up) :-
     collected(gold, Count),
     NewCount is Count + 1,
     retractall(collected(gold, _)),
     assertz(collected(gold, NewCount)),
-    world_pick_up.
+    world_pick_up,
+    !.
 perform_action(step_out). % Nothing to do
 perform_action(shoot) :-
     world_shoot,
@@ -1134,7 +1169,6 @@ frontier_extend_(_, _, _, []).
 % Runs the algorithm until finding a gold position
 run_until_done :-
     sense_learn_act(G, A),
-    log('G = ~w~nA = ~w~n', [G, A]),
     A \= step_out,
     run_until_done,
     !.

@@ -7,11 +7,19 @@
 
 :- use_module(library(heaps)).
 
+init(H, E) :-
+    deinit,
+    assertz(h(H)),
+    assertz(e(E)).
+deinit :-
+    retractall(h(_)),
+    retractall(e(_)).
 
 % Add a heap_element(Cost,Position,Path) triple to the search heap
 % of open nodes. Carrying Path for interest.
 add_to_queue(AccCost, Queue, node(Position,Path), Goal, NewQueue) :-
-    a_star_heuristic(Position, Goal, D),
+    h(H),
+    call(H, Position, Goal, D),
     succ(AccCost, ActCost), % one action has been taken, so incr
     Priority is ActCost + D, % Priority cost
     add_to_heap(Queue, Priority, heap_element(ActCost,Position,Path), NewQueue).
@@ -36,6 +44,7 @@ nodes_positions(Nodes, Positions) :-
 % a_star/5
 % a_star(+Origin, +Goal, +Heuristic, +Expand, -Path)
 a_star(Origin, Goal, Heuristic, Expand, Path) :-
+    init(Heuristic, Expand),
     % Create heap of open search nodes
     call(Heuristic, Origin, Goal, H),
     %                   heap_element(AccCost,Pos,Path)
@@ -43,6 +52,7 @@ a_star(Origin, Goal, Heuristic, Expand, Path) :-
     % Do the search
     a_star(Queue, Goal, [Origin], Heuristic, Expand, node(Goal,Answer)),
     reverse(Answer, Path),
+    deinit,
     !.
 
 % a_star/6
