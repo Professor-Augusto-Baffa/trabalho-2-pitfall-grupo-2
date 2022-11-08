@@ -277,16 +277,28 @@ get_agent_health(Character, Health) :-
 
 % update_agent_health/2
 % Update agent's health
+% When NewHealth <= 0, agent is killed, game over!
 update_agent_health(Character, NewHealth) :-
-    (NewHealth >= 0),
+    (NewHealth > 0),
     get_agent_health(Character, OldHealth),
     retractall(agent_health(Character, _)),
     assertz(agent_health(Character, NewHealth)),
     !.
-update_agent_health(_,_).
+update_agent_health(Character, _) :-
+    retractall(agent_health(Character, _)),
+    assertz(agent_health(Character, 0)),
+    agent_killed,
+    !.
 
-% power_up/0
+% agent_killed/0
+% Called when agent's HP reaches zero, game over!
+agent_killed :-
+    write('You died! Game over!'),
+    !.
+
+% agent_power_up/0
 % Rule for updating health with +20 HP when agent collects power up
+% TODO: only 3 available
 agent_power_up :- 
     get_agent_health(agent, OldHealth),
     (NewHealth is integer(OldHealth)+20),
@@ -296,6 +308,7 @@ agent_power_up :-
 % 
 % Score System: Costs and Rewards
 % ------
+% Assumes game score cannot be negative
 % 1. Pick up: +1000
 % 2. Falling in a pit: -1000
 % 3. Getting killed by an enemy: -1000
