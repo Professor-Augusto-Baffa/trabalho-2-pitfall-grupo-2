@@ -270,7 +270,7 @@ class App:
     
     def execute_querry(self):
         #Resposta é um dicionario com Goal, Action e Sensors
-        resposta = self.player.cerebro.faz_query("sense_learn_act(Goal,Action), sense_environment(Sensors).")
+        resposta = self.player.cerebro.faz_query("sense_learn_act(Goal,Action), sense_environment(Sensors), print_cave().")
 
         sensores = resposta["Sensors"].replace("(","")
         sensores = sensores.replace(")","")
@@ -302,6 +302,15 @@ class App:
         else:
             print("Ação não compreendida")
 
+    def update_map(self):
+        #fazer querry dos 5 pontos -> local e 4 em volta
+        pos = self.player.pos_matriz
+        query = "certain(Pos,({pos1},{pos2})).".format(pos1 = pos[0], pos2 = pos[1])
+        resposta = self.player.cerebro.faz_query(query)
+        print(resposta)
+        print(pos)
+        if resposta["Pos"] == "no_steps" or "no_enemy":
+            self.visaoDoJogador.change_tile(pos,".")
     ###############
     # Path Finder #
     ###############
@@ -345,6 +354,7 @@ class App:
             self.window.display()
             if self.auto_path and self.retardo >= self.tempoDeRetardo:
                 self.execute_querry()
+                self.update_map()
                 self.retardo = 0
             elif self.retardo < self.tempoDeRetardo:
                 self.retardo+=1
