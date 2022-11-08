@@ -290,7 +290,8 @@ update_agent_health(_,_).
 agent_power_up :- 
     get_agent_health(agent, OldHealth),
     (NewHealth is integer(OldHealth)+20),
-    update_agent_health(agent, NewHealth).
+    update_agent_health(agent, NewHealth),
+    !.
 
 % 
 % Score System: Costs and Rewards
@@ -330,35 +331,40 @@ update_game_score(_).
 pick_up_score :-
     get_game_score(OldScore),
     (NewScore is 1000+integer(OldScore)),
-    update_game_score(NewScore).
+    update_game_score(NewScore),
+    !.
 
 % pit_fall/0
 % Fall into Pit -> -1000 points
 pit_fall_score :-
     get_game_score(OldScore),
     (NewScore is integer(OldScore)-1000),
-    update_game_score(NewScore).
+    update_game_score(NewScore),
+    !.
 
 % killed/0
 % Killed by enemy -> -1000 points
 killed_score :-
     get_game_score(OldScore),
     (NewScore is integer(OldScore)-1000),
-    update_game_score(NewScore).
+    update_game_score(NewScore),
+    !.
 
 % attacked/1
 % Attacked by enemy -> -{damage}
 attacked_score(Damage) :-
     get_game_score(OldScore),
     (NewScore is integer(OldScore)-integer(Damage)),
-    update_game_score(NewScore).
+    update_game_score(NewScore),
+    !.
 
 % shooting/0
 % Shooting an arrow -> -10 points
 shooting_score :-
     get_game_score(OldScore),
     (NewScore is integer(OldScore)-10),
-    update_game_score(NewScore).
+    update_game_score(NewScore),
+    !.
 
 
 %
