@@ -25,7 +25,7 @@
     goal/1,
     certain/2,
     collected/2,
-    game_score/2,
+    game_score/1,
     health/3,
     agent_health/2
 ]).
@@ -290,21 +290,35 @@ update_agent_health(Character, NewHealth) :-
 % 4. Being attacked by an enemy: -{dammage}
 % 5. Shooting: -10
 
-% score/1
+% initial_game_score/1
 % Inicialize game score
-game_score(agent, 0).
+initial_game_score(0).
 
-% update_score/1
-% Update score by calling game_score
-update_score(NewScore) :- game_score(agent, NewScore).
+% get_game_score/1
+% Get the game's score
+get_game_score(Score) :-
+    game_score(Score),
+    !.
+get_game_score(Score) :-
+    initial_game_score(Score),
+    assertz(game_score(Score)),
+    !.
+
+% update_game_score/1
+% Update the game's score
+update_game_score(NewScore) :-
+    get_game_score(OldScore),
+    retractall(game_score),
+    assertz(game_score(NewScore)),
+    !.
 
 % Rules for costs and rewards
 % pick_up/0, pit_fall/0, killed/0, attacked/1, shooting/0
-pick_up :- update_score(1000).
-pit_fall :- update_score(-1000).
-killed :- update_score(-1000).
-attacked(Damage) :- update_score(Damage).
-shooting :- update_score(-10).
+% pick_up :- update_game_score(1000).
+% pit_fall :- update_game_score(-1000).
+% killed :- update_score(-1000).
+% attacked(Damage) :- update_score(Damage).
+% shooting :- update_score(-10).
 
 
 %
