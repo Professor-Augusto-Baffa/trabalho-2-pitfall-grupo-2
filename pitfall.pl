@@ -26,7 +26,8 @@
     certain/2,
     collected/2,
     game_score/2,
-    character_health/2
+    health/3,
+    agent_health/2
 ]).
 
 % assert_new/1
@@ -229,41 +230,56 @@ print_cave_cell(_, _) :-
 
 
 %
-% Health Score
+% Health Tracking
 % ------
 % Agent's initial energy: 100
 % Enemies' initial energy: 100
-% TODO: Energy filled by power-ups: 20
+% Energy filled by power-ups: 20
 
-% character_health/2
-% Initializes HP for agent and enemies
-character_health(agent, 100).
-character_health(small_enemy, 100).
-character_health(large_enemy, 100).
+% initial_health/2
+% Initializes health for agent and enemies --> all 100 HP
+initial_health(agent, 100).
+initial_health(small_enemy, 100).
+initial_health(large_enemy, 100).
 
-% dead/1
-% True when Character (agent or enemy) loses all HP
-dead(Character) :- character_health(Character, 0).
+% get_health/3
+% Given a character (excluding agent) and their position on the map, get said character's health
+% If character's health hasn't been tracked yet, initialize new health
+get_health(Pos, Character, Health) :-
+    health(Pos, Character, Health),
+    !.
+get_health(Pos, Character, Health) :-
+    world_position(Character, Pos),
+    initial_health(Character, Health),
+    assertz(health(Pos, Character, Health)),
+    !.
 
-% update_health/2
-% Updates Character health with HP given
-update_health(Character, HP) :- character_health(Character, HP).
+% update_health/3
+% Given a character (excluding agent) and their position on the map, update said character's health
+update_health(Pos, Character, NewHealth) :-
+    get_health(Pos, Character, OldHealth),
+    retractall(health(Pos, Character, _)),
+    assertz(health(Pos, Character, NewHealth)),
+    !.
 
-% increase_health/4
-% decrease_health/4
-% Calculate character's new HP (current HP +/- points gained) and call update_health rule
-% If character's new HP is zero, call dead rule
-increase_health(Character, HP, Points, NewHP) :- 
-    NewHP is HP+Points,
-    update_health(Character, NewHP).
+% get_agent_health/2
+% Get agent's health
+% If agent's health hasn't been tracked yet, initialize new health
+get_agent_health(Character, Health) :-
+    agent_health(Character, Health),
+    !.
+get_agent_health(Character, Health) :-
+    initial_health(Character, Health),
+    assertz(agent_health(Character, Health)),
+    !.
 
-decrease_health(Character, HP, Points, NewHP) :-
-    NewHP is HP-Points,
-    (
-        (NewHP > 0, update_health(Character, NewHP)) ;
-        (HP =:= 0, dead(Character))
-    ).
-
+% update_agent_health/2
+% Update agent's health
+update_agent_health(Character, NewHealth) :-
+    get_agent_health(Character, OldHealth),
+    retractall(agent_health(Character, _)),
+    assertz(agent_health(Character, NewHealth)),
+    !.
 
 % 
 % Score System: Costs and Rewards
