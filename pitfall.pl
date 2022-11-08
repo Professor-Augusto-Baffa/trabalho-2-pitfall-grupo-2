@@ -257,6 +257,7 @@ get_health(Pos, Character, Health) :-
 % update_health/3
 % Given a character (excluding agent) and their position on the map, update said character's health
 update_health(Pos, Character, NewHealth) :-
+    (NewHealth >= 0),
     get_health(Pos, Character, OldHealth),
     retractall(health(Pos, Character, _)),
     assertz(health(Pos, Character, NewHealth)),
@@ -276,6 +277,7 @@ get_agent_health(Character, Health) :-
 % update_agent_health/2
 % Update agent's health
 update_agent_health(Character, NewHealth) :-
+    (NewHealth >= 0),
     get_agent_health(Character, OldHealth),
     retractall(agent_health(Character, _)),
     assertz(agent_health(Character, NewHealth)),
@@ -307,6 +309,7 @@ get_game_score(Score) :-
 % update_game_score/1
 % Update the game's score
 update_game_score(NewScore) :-
+    (NewScore >= 0),
     get_game_score(OldScore),
     retractall(game_score),
     assertz(game_score(NewScore)),
