@@ -27,7 +27,8 @@
     collected/2,
     game_score/1,
     health/3,
-    agent_health/2
+    agent_health/2,
+    inventory/3
 ]).
 
 % assert_new/1
@@ -309,13 +310,17 @@ agent_killed :-
 
 % agent_power_up/0
 % Rule for updating health with +20 HP when agent collects power up
-% TODO: only 3 available
-agent_power_up :- 
+% Only 3 available!
+agent_power_up :-
+    get_inventory(_, PowerUps),
+    (PowerUps > 0), 
+    use_power_up,
     get_agent_health(agent, OldHealth),
     (NewHealth is integer(OldHealth)+20),
     update_agent_health(agent, NewHealth),
     !.
-
+agent_power_up :-
+    write('No power ups available!').
 
 
 % 
@@ -347,7 +352,6 @@ get_game_score(Score) :-
 % Update the game's score
 update_game_score(NewScore) :-
     (NewScore >= 0),
-    get_game_score(OldScore),
     retractall(game_score(_)),
     assertz(game_score(NewScore)),
     !.
@@ -402,10 +406,58 @@ gen_action_score :-
     !.
 
 
-%
-% TODO: Attack System
-% ----
 
+%
+% Inventory
+% ----
+% Power ups count: 3
+% Ammo count: 5
+
+% initial_inventory/3
+initial_inventory(agent, 5, 3).
+
+% get_inventory/2
+% Get agent's inventory
+get_inventory(Ammo, PowerUps) :-
+    inventory(agent, Ammo, PowerUps),
+    !.
+get_inventory(Ammo, PowerUps) :-
+    initial_inventory(agent, Ammo, PowerUps),
+    assertz(inventory(agent, Ammo, PowerUps)),
+    !.
+
+
+% update_inventory/2
+% Called whenever agent uses a power up or ammo
+update_inventory(NewAmmo, NewPowerUps) :-
+    (NewAmmo >= 0, NewPowerUps >= 0),
+    retractall(inventory(agent,_,_)),
+    assertz(inventory(agent, NewAmmo, NewPowerUps)),
+    !.
+update_inventory(_,_).
+
+
+% use_ammo/0
+% Agent uses 1 ammo
+use_ammo :-
+    get_inventory(OldAmmo, PowerUps),
+    (NewAmmo is integer(OldAmmo)-1),
+    update_inventory(NewAmmo, PowerUps),
+    !.
+
+% use_power_up/0
+% Agent uses 1 power up
+use_power_up :-
+    get_inventory(Ammo, OldPowerUps),
+    (NewPowerUps is integer(OldPowerUps)-1),
+    update_inventory(Ammo, NewPowerUps),
+    !.
+
+
+
+%
+% Attack System
+% ----
 % Ammo damage: random between 20 and 50
 % Ammo count: 5
 
