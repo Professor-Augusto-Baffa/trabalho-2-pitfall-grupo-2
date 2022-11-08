@@ -174,7 +174,7 @@ class App:
 
         self.speed: float = 0.1#180 # Melhor entre 0.1 e 200
         self.retardo = 0
-        self.tempoDeRetardo = 20
+        self.tempoDeRetardo = 200
 
         self.window = display.Window()
         self.window.add_event_handler('main_quit_handler', pygame.QUIT, lambda e: self.stop_running())
@@ -204,30 +204,26 @@ class App:
         self.player2_display = display.PlayerDisplay(self.mapa,self.player2.pos,self.mapDisplay.tile_size/2)
         self.player2_display.set_window(self.window)
 
+        self.text_to_display = "Sensores: Nenhum alerta"
+        self.text_sensors = display.Text(self.text_to_display, [600,button_v_pos],24)
+        self.text_sensors.set_window(self.window)
+
         self.tempo_total = 0
         self.jornada_string = "Tempo da jornada: "
         self.timer = display.Text(self.jornada_string + str(self.tempo_total), (30, timer_v_pos), timer_font_size)
         self.timer.set_window(self.window)
 
-        self.go_button = display.Button('Iniciar', (25, button_v_pos), (100, button_height), on_click=self.start_search)
+        self.go_button = display.Button('Iniciar', (25, button_v_pos), (100, button_height), on_click=self.change_auto_path)
         self.go_button.set_window(self.window)
 
-        self.stop_button = display.Button('Parar', (150, button_v_pos), (100, button_height), on_click=self.stop_search)
-        self.stop_button.set_window(self.window)
-
-        self.step_button = display.Button('Step', (275, button_v_pos), (100, button_height), on_click=self.step_search)
-        self.step_button.set_window(self.window)
-
-        self.reset_button = display.Button('Zerar', (400, button_v_pos), (100, button_height), on_click=self.reset_search)
-        self.reset_button.set_window(self.window)
-
-        self.move_up_button = display.Button('Forward',(600,button_v_pos),(100,button_height),on_click=self.move_players)
+        self.move_up_button = display.Button('Forward',(150,button_v_pos),(100,button_height),on_click=self.move_players)
         self.move_up_button.set_window(self.window)
         
-        self.move_down_button = display.Button('Rotate',(700,button_v_pos),(100,button_height),on_click=self.rotate_players)
+        self.move_down_button = display.Button('Rotate',(275,button_v_pos),(100,button_height),on_click=self.rotate_players)
         self.move_down_button.set_window(self.window)
+
         self.auto_path = False
-        self.move_down_button = display.Button('Executa Ação',(800,button_v_pos),(100,button_height),on_click=self.change_auto_path)
+        self.move_down_button = display.Button('Executa Ação',(400,button_v_pos),(100,button_height),on_click=self.execute_querry)
         self.move_down_button.set_window(self.window)   
 
         self.path_finder = PathFinder(
@@ -274,17 +270,47 @@ class App:
     
     def execute_querry(self):
         #Resposta é um dicionario com Goal, Action e Sensors
-        resposta = self.player.cerebro.faz_querry("sense_learn_act(Goal,Action),sense_environment(Sensors).")
-        print(resposta)
+        resposta = self.player.cerebro.faz_query("sense_learn_act(Goal,Action), sense_environment(Sensors), print_cave().")
+
+        sensores = resposta["Sensors"].replace("(","")
+        sensores = sensores.replace(")","")
+        sensores = sensores.replace(" ","")
+        sensores = sensores.replace(",,",",")
+        sensores = sensores.split(',')
+        #Checagem de sensores
+        if sensores [1] == "steps":
+            self.text_sensors.text = "Sensores: Steps"
+        elif sensores [2] == "breeze":
+            self.text_sensors.text = "Sensores: Breeze"
+        elif sensores [3] == "flash":
+            self.text_sensors.text = "Sensores: Flash"
+        elif sensores [4] == "glow":
+            self.text_sensors.text = "Sensores: Glow"
+        elif sensores [5] == "impact":
+            self.text_sensors.text = "Sensores: Impact"
+        elif sensores [6] == "scream":
+            self.text_sensors.text = "Sensores: Scream"
+        else:
+            self.text_sensors.text = "Sensores: Nenhum Alerta"
+        #Checagem da acao
         if resposta['Action'] == "turn_clockwise":
             self.rotate_players()
-        elif resposta['Action'] == "move_forward":
+        elif resposta['Action'] == "move_forward" and sensores[5] == "no_impact":
             self.move_players()
         elif resposta['Action'] == "pick_up":
             pass
         else:
             print("Ação não compreendida")
 
+    def update_map(self):
+        #fazer querry dos 5 pontos -> local e 4 em volta
+        pos = self.player.pos_matriz
+        query = "certain(Pos,({pos1},{pos2})).".format(pos1 = pos[0], pos2 = pos[1])
+        resposta = self.player.cerebro.faz_query(query)
+        print(resposta)
+        print(pos)
+        if resposta["Pos"] == "no_steps" or "no_enemy":
+            self.visaoDoJogador.change_tile(pos,".")
     ###############
     # Path Finder #
     ###############
@@ -328,6 +354,8 @@ class App:
             self.window.display()
             if self.auto_path and self.retardo >= self.tempoDeRetardo:
                 self.execute_querry()
+                self.update_map()
+                self.retardo = 0
             elif self.retardo < self.tempoDeRetardo:
                 self.retardo+=1
 
