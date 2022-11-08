@@ -262,6 +262,7 @@ update_health(Pos, Character, NewHealth) :-
     retractall(health(Pos, Character, _)),
     assertz(health(Pos, Character, NewHealth)),
     !.
+update_health(_,_,_).
 
 % get_agent_health/2
 % Get agent's health
@@ -282,6 +283,7 @@ update_agent_health(Character, NewHealth) :-
     retractall(agent_health(Character, _)),
     assertz(agent_health(Character, NewHealth)),
     !.
+update_agent_health(_,_).
 
 % 
 % Score System: Costs and Rewards
