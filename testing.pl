@@ -98,6 +98,7 @@ update_game_score(NewScore) :-
     retractall(game_score(_)),
     assertz(game_score(NewScore)),
     !.
+update_game_score(_).
 
 % pick_up/0
 % Pick Up Reward -> +1000 points

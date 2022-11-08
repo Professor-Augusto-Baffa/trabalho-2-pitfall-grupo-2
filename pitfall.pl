@@ -311,41 +311,10 @@ get_game_score(Score) :-
 update_game_score(NewScore) :-
     (NewScore >= 0),
     get_game_score(OldScore),
-    retractall(game_score),
-    assertz(game_score(NewScore)),
-    !.
-
-
-% 
-% Score System: Costs and Rewards
-% ------
-% 1. Pick up: +1000
-% 2. Falling in a pit: -1000
-% 3. Getting killed by an enemy: -1000
-% 4. Being attacked by an enemy: -{dammage}
-% 5. Shooting: -10
-
-% initial_game_score/1
-% Inicialize game score
-initial_game_score(0).
-
-% get_game_score/1
-% Get the game's score
-get_game_score(Score) :-
-    game_score(Score),
-    !.
-get_game_score(Score) :-
-    initial_game_score(Score),
-    assertz(game_score(Score)),
-    !.
-
-% update_game_score/1
-% Update the game's score
-update_game_score(NewScore) :-
-    get_game_score(OldScore),
     retractall(game_score(_)),
     assertz(game_score(NewScore)),
     !.
+update_game_score(_).
 
 % pick_up/0
 % Pick Up Reward -> +1000 points
