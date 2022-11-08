@@ -41,7 +41,11 @@
     killed_enemy/0,
     goal/1,
     certain/2,
-    collected/2
+    collected/2,
+    game_score/1,
+    health/3,
+    agent_health/2,
+    inventory/3
 ]).
 
 :- enable_logging.
@@ -243,6 +247,292 @@ print_cave_cell(_, _) :-
     log('\033[48;5;0m\033[38;5;0m?\033[0m'),
     !.
 
+
+%
+% Health Tracking
+% ------
+% Agent's initial energy: 100
+% Enemies' initial energy: 100
+% Energy filled by power-ups: 20
+
+% initial_health/2
+% Initializes health for agent and enemies --> all 100 HP
+initial_health(agent, 100).
+initial_health(small_enemy, 100).
+initial_health(large_enemy, 100).
+
+% get_health/3
+% Given a character (excluding agent) and their position on the map, get said character's health
+% If character's health hasn't been tracked yet, initialize new health
+get_health(Pos, Character, Health) :-
+    health(Pos, Character, Health),
+    !.
+get_health(Pos, Character, Health) :-
+    world_position(Character, Pos),
+    initial_health(Character, Health),
+    assertz(health(Pos, Character, Health)),
+    !.
+
+% update_health/3
+% Given a character (excluding agent) and their position on the map, update said character's health
+% If NewHealth <= 0, call character_killed rule
+update_health(Pos, Character, NewHealth) :-
+    (NewHealth > 0),
+    retractall(health(Pos, Character, _)),
+    assertz(health(Pos, Character, NewHealth)),
+    !.
+update_health(Pos, Character, _) :-
+    retractall(health(Pos, Character, _)),
+    assertz(health(Pos, Character, 0)),
+    character_killed,
+    !.
+
+% character_killed/0
+% Called when character's (except agent) HP reaches 0
+% TODO: Join with map update when enemy is killed
+character_killed :-
+    write('Character killed!'),
+    !.
+
+% get_agent_health/2
+% Get agent's health
+% If agent's health hasn't been tracked yet, initialize new health
+get_agent_health(Character, Health) :-
+    agent_health(Character, Health),
+    !.
+get_agent_health(Character, Health) :-
+    initial_health(Character, Health),
+    assertz(agent_health(Character, Health)),
+    !.
+
+% update_agent_health/2
+% Update agent's health
+% When NewHealth <= 0, agent is killed, game over!
+update_agent_health(Character, NewHealth) :-
+    (NewHealth > 0),
+    retractall(agent_health(Character, _)),
+    assertz(agent_health(Character, NewHealth)),
+    !.
+update_agent_health(Character, _) :-
+    retractall(agent_health(Character, _)),
+    assertz(agent_health(Character, 0)),
+    agent_killed,
+    !.
+
+% agent_killed/0
+% Called when agent's HP reaches zero, game over!
+% TODO: Call Python to call Game Over
+agent_killed :-
+    killed_score,
+    write('You died! Game over!'),
+    !.
+
+% agent_power_up/0
+% Rule for updating health with +20 HP when agent collects power up
+% Only 3 available + has to match agent's position
+% TODO: Verify agent's position
+agent_power_up :-
+    get_inventory(_, PowerUps),
+    (PowerUps > 0), 
+    use_power_up,
+    get_agent_health(agent, OldHealth),
+    (NewHealth is integer(OldHealth)+20),
+    update_agent_health(agent, NewHealth),
+    !.
+agent_power_up :-
+    write('No power up available!').
+
+
+% 
+% Score System: Costs and Rewards
+% ------
+% Assumes game score cannot be negative
+% 1. Pick up: +1000
+% 2. Falling in a pit: -1000
+% 3. Getting killed by an enemy: -1000
+% 4. Being attacked by an enemy: -{dammage}
+% 5. Shooting: -10
+% 6. Other Actions (moving, turning, etc): -1
+
+% initial_game_score/1
+% Inicialize game score
+initial_game_score(0).
+
+% get_game_score/1
+% Get the game's score
+get_game_score(Score) :-
+    game_score(Score),
+    !.
+get_game_score(Score) :-
+    initial_game_score(Score),
+    assertz(game_score(Score)),
+    !.
+
+% update_game_score/1
+% Update the game's score
+update_game_score(NewScore) :-
+    (NewScore >= 0),
+    retractall(game_score(_)),
+    assertz(game_score(NewScore)),
+    !.
+update_game_score(_).
+
+% pick_up/0
+% Pick Up Reward -> +1000 points
+pick_up_score :-
+    get_game_score(OldScore),
+    (NewScore is 1000+integer(OldScore)),
+    update_game_score(NewScore),
+    !.
+
+% pit_fall/0
+% Fall into Pit -> -1000 points
+pit_fall_score :-
+    get_game_score(OldScore),
+    (NewScore is integer(OldScore)-1000),
+    update_game_score(NewScore),
+    !.
+
+% killed/0
+% Killed by enemy -> -1000 points
+killed_score :-
+    get_game_score(OldScore),
+    (NewScore is integer(OldScore)-1000),
+    update_game_score(NewScore),
+    !.
+
+% attacked/1
+% Attacked by enemy -> -{damage}
+attacked_score(Damage) :-
+    get_game_score(OldScore),
+    (NewScore is integer(OldScore)-integer(Damage)),
+    update_game_score(NewScore),
+    !.
+
+% shooting/0
+% Shooting an arrow -> -10 points
+shooting_score :-
+    get_game_score(OldScore),
+    (NewScore is integer(OldScore)-10),
+    update_game_score(NewScore),
+    !.
+
+% gen_action_score/0
+% For general actions such as moving, etc -> -1 point
+gen_action_score :-
+    get_game_score(OldScore),
+    (NewScore is integer(OldScore)-1),
+    update_game_score(NewScore),
+    !.
+
+
+
+%
+% Inventory
+% ----
+% Power ups count: 3
+% Ammo count: 5
+
+% initial_inventory/3
+initial_inventory(agent, 5, 3).
+
+% get_inventory/2
+% Get agent's inventory
+get_inventory(Ammo, PowerUps) :-
+    inventory(agent, Ammo, PowerUps),
+    !.
+get_inventory(Ammo, PowerUps) :-
+    initial_inventory(agent, Ammo, PowerUps),
+    assertz(inventory(agent, Ammo, PowerUps)),
+    !.
+
+
+% update_inventory/2
+% Called whenever agent uses a power up or ammo
+update_inventory(NewAmmo, NewPowerUps) :-
+    (NewAmmo >= 0, NewPowerUps >= 0),
+    retractall(inventory(agent,_,_)),
+    assertz(inventory(agent, NewAmmo, NewPowerUps)),
+    !.
+update_inventory(_,_).
+
+
+% use_ammo/0
+% Agent uses 1 ammo
+use_ammo :-
+    get_inventory(OldAmmo, PowerUps),
+    (NewAmmo is integer(OldAmmo)-1),
+    update_inventory(NewAmmo, PowerUps),
+    !.
+
+% use_power_up/0
+% Agent uses 1 power up
+use_power_up :-
+    get_inventory(Ammo, OldPowerUps),
+    (NewPowerUps is integer(OldPowerUps)-1),
+    update_inventory(Ammo, NewPowerUps),
+    !.
+
+
+
+%
+% Attack System
+% ----
+% Small Enemy Attack -> -20 HP for agent
+% Big Enemy Attack -> -50 HP for agent
+% Ammo damage: random between 20 and 50
+% Ammo count: 5
+
+% TODO: Precisamos verificar aqui se o inimigo pode atacar o agente (pela posicao do inimigo)?
+
+% small_enemy_attacks/0
+%
+% 1. game score -> -20 points
+% 2. agent health -> -20 points
+small_enemy_attacks :-
+    attacked_score(20),
+    get_agent_health(agent, OldHealth),
+    (NewHealth is integer(OldHealth)-20),
+    update_agent_health(agent, NewHealth),
+    !.
+
+% big_enemy_attacks/0
+% 
+% 1. game score -> -50 points
+% 2. agent health = -50 points
+big_enemy_attacks :-
+    attacked_score(50),
+    get_agent_health(agent, OldHealth),
+    (NewHealth is integer(OldHealth)-50),
+    update_agent_health(agent, NewHealth),
+    !.
+
+% teleport_attack/0
+% Enemy attacks with teleport
+% teleport_attack :-
+%     ???
+%     !.
+
+% agent_attacks/2
+% Damage is a random number between 20 and 50
+%
+% 1. game score -> -10 points
+% 2. ammo -> -1
+% 3. enemy health -> -{damage}
+agent_attacks(EnemyPos, Enemy) :-
+    get_inventory(Ammo, _),
+    (Ammo > 0), 
+    use_ammo,
+    shooting_score,
+    random_between(20, 50, Damage),
+    get_health(EnemyPos, Enemy, OldHealth),
+    (NewHealth is integer(OldHealth)-integer(Damage)),
+    update_health(EnemyPos, Enemy, NewHealth),
+    !.
+agent_attacks(_,_) :-
+    write('Agent attack on enemy failed!'),
+    !.
+
 %
 % Observation and decision making
 % ----
@@ -347,7 +637,7 @@ sense_flash(no_flash).
 
 % sense_glow/1
 % sense_glow(-Glow)
-% glow if gold in agent's cell
+% glow if gold in agents cell
 sense_glow(glow) :-
     world_position(agent, AP),
     world_position(gold, AP).

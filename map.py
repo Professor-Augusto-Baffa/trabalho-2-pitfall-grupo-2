@@ -57,7 +57,7 @@ class Map:
     def get_tile(self, index: typing.Tuple[int, int]) -> typing.Optional[Tile]:
         line, col = index
         return self._get_tile(line, col)
-    
+
     def get_event_tile(self, event: str) -> typing.Optional[typing.Tuple[int, int]]:
         if self.event_tiles is None:
             return None
