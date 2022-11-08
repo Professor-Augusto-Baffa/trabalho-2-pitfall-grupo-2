@@ -312,13 +312,72 @@ update_game_score(NewScore) :-
     assertz(game_score(NewScore)),
     !.
 
-% Rules for costs and rewards
-% pick_up/0, pit_fall/0, killed/0, attacked/1, shooting/0
-% pick_up :- update_game_score(1000).
-% pit_fall :- update_game_score(-1000).
-% killed :- update_score(-1000).
-% attacked(Damage) :- update_score(Damage).
-% shooting :- update_score(-10).
+
+% 
+% Score System: Costs and Rewards
+% ------
+% 1. Pick up: +1000
+% 2. Falling in a pit: -1000
+% 3. Getting killed by an enemy: -1000
+% 4. Being attacked by an enemy: -{dammage}
+% 5. Shooting: -10
+
+% initial_game_score/1
+% Inicialize game score
+initial_game_score(0).
+
+% get_game_score/1
+% Get the game's score
+get_game_score(Score) :-
+    game_score(Score),
+    !.
+get_game_score(Score) :-
+    initial_game_score(Score),
+    assertz(game_score(Score)),
+    !.
+
+% update_game_score/1
+% Update the game's score
+update_game_score(NewScore) :-
+    get_game_score(OldScore),
+    retractall(game_score(_)),
+    assertz(game_score(NewScore)),
+    !.
+
+% pick_up/0
+% Pick Up Reward -> +1000 points
+pick_up_score :-
+    get_game_score(OldScore),
+    (NewScore is 1000+integer(OldScore)),
+    update_game_score(NewScore).
+
+% pit_fall/0
+% Fall into Pit -> -1000 points
+pit_fall_score :-
+    get_game_score(OldScore),
+    (NewScore is integer(OldScore)-1000),
+    update_game_score(NewScore).
+
+% killed/0
+% Killed by enemy -> -1000 points
+killed_score :-
+    get_game_score(OldScore),
+    (NewScore is integer(OldScore)-1000),
+    update_game_score(NewScore).
+
+% attacked/1
+% Attacked by enemy -> -{damage}
+attacked_score(Damage) :-
+    get_game_score(OldScore),
+    (NewScore is integer(OldScore)-integer(Damage)),
+    update_game_score(NewScore).
+
+% shooting/0
+% Shooting an arrow -> -10 points
+shooting_score :-
+    get_game_score(OldScore),
+    (NewScore is integer(OldScore)-10),
+    update_game_score(NewScore).
 
 
 %
