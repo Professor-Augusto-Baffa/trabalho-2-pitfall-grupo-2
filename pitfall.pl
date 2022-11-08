@@ -303,14 +303,16 @@ update_agent_health(Character, _) :-
 
 % agent_killed/0
 % Called when agent's HP reaches zero, game over!
-% TODO: Integrate with Python to call Game Over
+% TODO: Call Python to call Game Over
 agent_killed :-
+    killed_score,
     write('You died! Game over!'),
     !.
 
 % agent_power_up/0
 % Rule for updating health with +20 HP when agent collects power up
-% Only 3 available!
+% Only 3 available + has to match agent's position
+% TODO: Verify agent's position
 agent_power_up :-
     get_inventory(_, PowerUps),
     (PowerUps > 0), 
@@ -320,7 +322,7 @@ agent_power_up :-
     update_agent_health(agent, NewHealth),
     !.
 agent_power_up :-
-    write('No power ups available!').
+    write('No power up available!').
 
 
 % 
@@ -458,9 +460,60 @@ use_power_up :-
 %
 % Attack System
 % ----
+% Small Enemy Attack -> -20 HP for agent
+% Big Enemy Attack -> -50 HP for agent
 % Ammo damage: random between 20 and 50
 % Ammo count: 5
 
+% TODO: Precisamos verificar aqui se o inimigo pode atacar o agente (pela posicao do inimigo)?
+
+% small_enemy_attacks/0
+%
+% 1. game score -> -20 points
+% 2. agent health -> -20 points
+small_enemy_attacks :-
+    attacked_score(20),
+    get_agent_health(agent, OldHealth),
+    (NewHealth is integer(OldHealth)-20),
+    update_agent_health(agent, NewHealth),
+    !.
+
+% big_enemy_attacks/0
+% 
+% 1. game score -> -50 points
+% 2. agent health = -50 points
+big_enemy_attacks :-
+    attacked_score(50),
+    get_agent_health(agent, OldHealth),
+    (NewHealth is integer(OldHealth)-50),
+    update_agent_health(agent, NewHealth),
+    !.
+
+% teleport_attack/0
+% Enemy attacks with teleport
+% teleport_attack :-
+%     ???
+%     !.
+
+% agent_attacks/2
+% Damage is a random number between 20 and 50
+%
+% 1. game score -> -10 points
+% 2. ammo -> -1
+% 3. enemy health -> -{damage}
+agent_attacks(EnemyPos, Enemy) :-
+    get_inventory(Ammo, _),
+    (Ammo > 0), 
+    use_ammo,
+    shooting_score,
+    random_between(20, 50, Damage),
+    get_health(EnemyPos, Enemy, OldHealth),
+    (NewHealth is integer(OldHealth)-integer(Damage)),
+    update_health(EnemyPos, Enemy, NewHealth),
+    !.
+agent_attacks(_,_) :-
+    write('Agent attack on enemy failed!'),
+    !.
 
 %
 % Observation and decision making
