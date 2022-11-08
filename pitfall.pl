@@ -256,13 +256,24 @@ get_health(Pos, Character, Health) :-
 
 % update_health/3
 % Given a character (excluding agent) and their position on the map, update said character's health
+% If NewHealth <= 0, call character_killed rule
 update_health(Pos, Character, NewHealth) :-
-    (NewHealth >= 0),
-    get_health(Pos, Character, OldHealth),
+    (NewHealth > 0),
     retractall(health(Pos, Character, _)),
     assertz(health(Pos, Character, NewHealth)),
     !.
-update_health(_,_,_).
+update_health(Pos, Character, _) :-
+    retractall(health(Pos, Character, _)),
+    assertz(health(Pos, Character, 0)),
+    character_killed,
+    !.
+
+% character_killed/0
+% Called when character's (except agent) HP reaches 0
+% TODO: Join with map update when enemy is killed
+character_killed :-
+    write('Character killed!'),
+    !.
 
 % get_agent_health/2
 % Get agent's health
@@ -280,7 +291,6 @@ get_agent_health(Character, Health) :-
 % When NewHealth <= 0, agent is killed, game over!
 update_agent_health(Character, NewHealth) :-
     (NewHealth > 0),
-    get_agent_health(Character, OldHealth),
     retractall(agent_health(Character, _)),
     assertz(agent_health(Character, NewHealth)),
     !.
@@ -292,6 +302,7 @@ update_agent_health(Character, _) :-
 
 % agent_killed/0
 % Called when agent's HP reaches zero, game over!
+% TODO: Integrate with Python to call Game Over
 agent_killed :-
     write('You died! Game over!'),
     !.
@@ -304,6 +315,8 @@ agent_power_up :-
     (NewHealth is integer(OldHealth)+20),
     update_agent_health(agent, NewHealth),
     !.
+
+
 
 % 
 % Score System: Costs and Rewards
