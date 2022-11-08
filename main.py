@@ -174,7 +174,7 @@ class App:
 
         self.speed: float = 0.1#180 # Melhor entre 0.1 e 200
         self.retardo = 0
-        self.tempoDeRetardo = 200
+        self.tempoDeRetardo = 10
 
         self.window = display.Window()
         self.window.add_event_handler('main_quit_handler', pygame.QUIT, lambda e: self.stop_running())
@@ -193,20 +193,16 @@ class App:
         self.mapDisplay = display.MapDisplay(self.mapa, (10, map_v_pos), (map_width, map_height))
         self.mapDisplay.set_window(self.window)
 
-        self.playerKnoledgeDisplay = display.MapDisplay(self.visaoDoJogador,(600, map_v_pos),(map_width, map_height))
-        self.playerKnoledgeDisplay.set_window(self.window)
-
         self.player = player.Player(pos = [self.mapDisplay.pos[0],self.mapDisplay.pos[1]+self.mapDisplay.tile_size * self.mapa.n_lines ],size = self.mapDisplay.tile_size, mapa = self.mapa)
         self.player_display = display.PlayerDisplay(self.mapa,self.player.pos,self.mapDisplay.tile_size/2)
         self.player_display.set_window(self.window)
 
-        self.player2 = player.Player(pos = [self.mapDisplay.pos[0] + 590,self.mapDisplay.pos[1]+self.mapDisplay.tile_size * self.mapa.n_lines ],size = self.mapDisplay.tile_size, mapa = self.mapa)
-        self.player2_display = display.PlayerDisplay(self.mapa,self.player2.pos,self.mapDisplay.tile_size/2)
-        self.player2_display.set_window(self.window)
-
         self.text_to_display = "Sensores: Nenhum alerta"
-        self.text_sensors = display.Text(self.text_to_display, [600,button_v_pos],24)
+        self.text_sensors = display.Text(self.text_to_display, [600,50],24)
         self.text_sensors.set_window(self.window)
+
+        self.next_action = display.Text("Ação: Nenhuma", [600,100],24)
+        self.next_action.set_window(self.window)
 
         self.tempo_total = 0
         self.jornada_string = "Tempo da jornada: "
@@ -257,20 +253,17 @@ class App:
     
     def move_players(self):
         self.player.move_forward()
-        self.player2.move_forward()
 
     def rotate_players(self):
         self.player.rotate()
-        self.player2.rotate()
         self.player_display.img = pygame.transform.rotate(self.player_display.img,-90)
-        self.player2_display.img = pygame.transform.rotate(self.player2_display.img,-90)
     
     def change_auto_path(self):
         self.auto_path =  not self.auto_path
     
     def execute_querry(self):
         #Resposta é um dicionario com Goal, Action e Sensors
-        resposta = self.player.cerebro.faz_query("sense_learn_act(Goal,Action), sense_environment(Sensors), print_cave().")
+        resposta = self.player.cerebro.faz_query("sense_learn_act(Goal,Action), sense_environment(Sensors), print_cave(), get_agent_health(agent, Health), get_game_score(Score).")
 
         sensores = resposta["Sensors"].replace("(","")
         sensores = sensores.replace(")","")
@@ -292,13 +285,30 @@ class App:
             self.text_sensors.text = "Sensores: Scream"
         else:
             self.text_sensors.text = "Sensores: Nenhum Alerta"
+
+        if resposta['Health'] <= 0:
+            self.auto_path = False
+            self.next_action = "Jogador morto"
+            return
         #Checagem da acao
         if resposta['Action'] == "turn_clockwise":
             self.rotate_players()
-        elif resposta['Action'] == "move_forward" and sensores[5] == "no_impact":
-            self.move_players()
+            self.next_action.text = "Ação: Rodar para direita"
+            
+        elif resposta['Action'] == "move_forward":
+            if sensores[5] == "no_impact":
+                self.move_players()
+                self.next_action.text = "Ação: Mover para frente"
+
         elif resposta['Action'] == "pick_up":
-            pass
+            self.next_action.text = "Ação: Pegar ouro"
+
+        elif resposta['Action'] == "shoot":
+            self.next_action.text = "Ação: Atacar"
+        
+        elif resposta['Action'] == "step_out":
+            self.next_action.text = "Ação: Sair da caverna"
+            self.auto_path = False
         else:
             print("Ação não compreendida")
 
@@ -354,7 +364,7 @@ class App:
             self.window.display()
             if self.auto_path and self.retardo >= self.tempoDeRetardo:
                 self.execute_querry()
-                self.update_map()
+                #self.update_map()
                 self.retardo = 0
             elif self.retardo < self.tempoDeRetardo:
                 self.retardo+=1

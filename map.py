@@ -58,11 +58,6 @@ class Map:
         line, col = index
         return self._get_tile(line, col)
 
-    def change_tile(self, index: typing.Tuple[int, int], new_type) -> typing.Optional[Tile]:
-        line, col = index
-        tile = self._get_tile(line, col)
-        tile.terrain_type = new_type
-
     def get_event_tile(self, event: str) -> typing.Optional[typing.Tuple[int, int]]:
         if self.event_tiles is None:
             return None
