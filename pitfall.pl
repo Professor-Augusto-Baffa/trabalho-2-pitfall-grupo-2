@@ -287,7 +287,7 @@ update_agent_health(_,_).
 
 % power_up/0
 % Rule for updating health with +20 HP when agent collects power up
-power_up :- 
+agent_power_up :- 
     get_agent_health(agent, OldHealth),
     (NewHealth is integer(OldHealth)+20),
     update_agent_health(agent, NewHealth).
