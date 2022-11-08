@@ -15,9 +15,13 @@
 % 4. Being attacked by an enemy: -{dammage}
 % 5. Shooting: -10
 
+:- use_module(a_star).
+:- use_module(logging).
+
 :- dynamic([
     world_position/2,
-    possible_position/2,
+    world_count/2,
+    possible_position/3,
     agent_position/1,
     facing/1,
     hit_wall/0,
@@ -125,8 +129,7 @@ world_position(power_up, (1, 12)).
 world_position(power_up, (2, 2)).
 world_position(power_up, (7, 7)).
 
-world_count(small_enemy, 2).
-world_count(large_enemy, 2).
+world_count(enemy, 4).
 world_count(pit, 8).
 world_count(gold, 3).
 world_count(teleporter, 4).
@@ -145,88 +148,88 @@ print_cave_line(Y) :-
     minX(MinX), maxX(MaxX),
     between(MinX, MaxX, X),
     print_cave_cell(X, Y),
-    write(' '),
+    log(' '),
     fail.
-print_cave_line(_) :- nl.
+print_cave_line(_) :- log('~n').
 print_cave_cell(X, Y) :-
     world_position(agent, (X, Y)),
     facing(north),
-    write('\033[48;5;35m^\033[0m'),
+    log('\033[48;5;35m^\033[0m'),
     !.
 print_cave_cell(X, Y) :-
     world_position(agent, (X, Y)),
     facing(east),
-    write('\033[48;5;35m>\033[0m'),
+    log('\033[48;5;35m>\033[0m'),
     !.
 print_cave_cell(X, Y) :-
     world_position(agent, (X, Y)),
     facing(west),
-    write('\033[48;5;35m<\033[0m'),
+    log('\033[48;5;35m<\033[0m'),
     !.
 print_cave_cell(X, Y) :-
     world_position(agent, (X, Y)),
     facing(south),
-    write('\033[48;5;35mv\033[0m'),
+    log('\033[48;5;35mv\033[0m'),
     !.
 print_cave_cell(X, Y) :-
     certain(visited, (X,Y)),
-    write('\033[48;5;231m\033[38;5;0m.\033[0m'),
+    log('\033[48;5;231m\033[38;5;0m.\033[0m'),
     !.
 print_cave_cell(X, Y) :-
     certain(safe, (X,Y)),
-    write('\033[48;5;231m\033[38;5;0mS\033[0m'),
+    log('\033[48;5;231m\033[38;5;0mS\033[0m'),
     !.
 print_cave_cell(X, Y) :-
     certain(pit, (X,Y)),
-    write('\033[48;5;238mP\033[0m'),
+    log('\033[48;5;238mP\033[0m'),
     !.
 print_cave_cell(X, Y) :-
     certain(enemy, (X,Y)),
-    write('\033[48;5;208mD\033[0m'),
+    log('\033[48;5;208mD\033[0m'),
     !.
 print_cave_cell(X, Y) :-
     certain(teleporter, (X,Y)),
-    write('\033[48;5;26mT\033[0m'),
+    log('\033[48;5;26mT\033[0m'),
     !.
 print_cave_cell(X, Y) :-
     certain(gold, (X,Y)),
-    write('\033[48;5;220mO\033[0m'),
+    log('\033[48;5;220mO\033[0m'),
     !.
 print_cave_cell(X, Y) :-
-    possible_position(pit, (X,Y)),
-    possible_position(enemy, (X,Y)),
-    possible_position(teleporter, (X,Y)),
-    write('+'),
+    possible_position(pit, (X,Y), _),
+    possible_position(enemy, (X,Y), _),
+    possible_position(teleporter, (X,Y), _),
+    log('+'),
     !.
 print_cave_cell(X, Y) :-
-    possible_position(pit, (X,Y)),
-    possible_position(enemy, (X,Y)),
-    write('+'),
+    possible_position(pit, (X,Y), _),
+    possible_position(enemy, (X,Y), _),
+    log('+'),
     !.
 print_cave_cell(X, Y) :-
-    possible_position(pit, (X,Y)),
-    possible_position(teleporter, (X,Y)),
-    write('+'),
+    possible_position(pit, (X,Y), _),
+    possible_position(teleporter, (X,Y), _),
+    log('+'),
     !.
 print_cave_cell(X, Y) :-
-    possible_position(enemy, (X,Y)),
-    possible_position(teleporter, (X,Y)),
-    write('+'),
+    possible_position(enemy, (X,Y), _),
+    possible_position(teleporter, (X,Y), _),
+    log('+'),
     !.
 print_cave_cell(X, Y) :-
-    possible_position(pit, (X,Y)),
-    write('\033[48;5;238mp\033[0m'),
+    possible_position(pit, (X,Y), _),
+    log('\033[48;5;238mp\033[0m'),
     !.
 print_cave_cell(X, Y) :-
-    possible_position(enemy, (X,Y)),
-    write('\033[48;5;208md\033[0m'),
+    possible_position(enemy, (X,Y), _),
+    log('\033[48;5;208md\033[0m'),
     !.
 print_cave_cell(X, Y) :-
-    possible_position(teleporter, (X,Y)),
-    write('\033[48;5;26mt\033[0m'),
+    possible_position(teleporter, (X,Y), _),
+    log('\033[48;5;26mt\033[0m'),
     !.
 print_cave_cell(_, _) :-
-    write('\033[48;5;0m\033[38;5;0m?\033[0m'),
+    log('\033[48;5;0m\033[38;5;0m?\033[0m'),
     !.
 
 
@@ -523,14 +526,15 @@ agent_attacks(_,_) :-
 % sense_learn_act(-Goal, -Action)
 % Learns from the environment and acts accordingly, returning the current Goal and the Action it performed
 sense_learn_act(Goal, Action) :-
-    format('-----~n'),
+    log('-----~n'),
     sense_environment(Sensors), write_sensors(Sensors),
     clear_transient_flags,
-    format('Learning:~n'),
+    log('Learning:~n'),
     update_knowledge(Sensors),
     update_goal,
     goal(Goal),
     next_action(Goal, Action),
+    print_cave,
     perform_action(Action),
     !.
 
@@ -562,7 +566,7 @@ write_sensors(Sensors) :-
     agent_position(AP),
     world_position(agent, ActualAP),
     facing(Dir),
-    format('Agent~n~t~2|at: ~w~n~t~2|sensing: ~w~nWorld~n~t~2|agent at: ~w~n~t~2|facing: ~w~n', [AP, Sensors, ActualAP, Dir]),
+    log('Agent~n~t~2|at: ~w~n~t~2|sensing: ~w~nWorld~n~t~2|agent at: ~w~n~t~2|facing: ~w~n', [AP, Sensors, ActualAP, Dir]),
     !.
 
 % sense_steps/1
@@ -649,9 +653,28 @@ world_shoot :-
     facing(Dir),
     adjacent(AP, EnemyPos, Dir),
     % TODO implement damage. For now, only remove the enemy
-    retractall(world_position(small_enemy, EnemyPos)),
-    retractall(world_position(large_enemy, EnemyPos)),
-    retractall(world_position(teleporter, EnemyPos)),
+    (   world_position(small_enemy, EnemyPos)
+    ->  (   retractall(world_position(small_enemy, EnemyPos)),
+            world_count(enemy, C),
+            NC is C - 1,
+            retractall(world_count(enemy, _)),
+            assertz(world_count(enemy, NC))
+        )
+    ;   world_position(large_enemy, EnemyPos)
+    ->  (   retractall(world_position(large_enemy, EnemyPos)),
+            world_count(enemy, C),
+            NC is C - 1,
+            retractall(world_count(enemy, _)),
+            assertz(world_count(enemy, NC))
+        )
+    ;   world_position(teleporter, EnemyPos)
+    ->  (   retractall(world_position(teleporter, EnemyPos)),
+            world_count(teleporter, C),
+            NC is C - 1,
+            retractall(world_count(teleporter, _)),
+            assertz(world_count(teleporter, NC))
+        )
+    ),
     assertz(killed_enemy),
     !.
 
@@ -666,7 +689,6 @@ clear_transient_flags :-
     retractall(killed_enemy).
 
 % TODO: invalidate observations around a killed enemy
-% TODO: choose closer positions to explore
 
 %
 % Update knowledge
@@ -680,11 +702,11 @@ update_knowledge(Sensors) :-
     Sensors = (Steps, Breeze, Flash, Glow, Impact, Scream),
     % Update impact first in case the wall was hit in the previous step
     update_impact(Impact),
+    update_scream(Scream),
     update_steps(Steps),
     update_breeze(Breeze),
     update_flash(Flash),
     update_glow(Glow),
-    update_scream(Scream),
     set_visited_cell,
     infer_dangerous_positions,
     infer_safe_positions.
@@ -692,7 +714,7 @@ update_knowledge(Sensors) :-
 set_visited_cell :-
     agent_position(AP),
     assert_new(certain(visited, AP)),
-    format('~t~2|visited: ~w~n', [AP]).
+    log('~t~2|visited: ~w~n', [AP]).
 
 % update_steps/1
 % update_steps(+Steps)
@@ -717,11 +739,16 @@ update_enemies(no_steps) :-
 update_enemies(no_steps).
 
 update_enemies(steps) :-
+    % If already found all enemies
+    world_count(enemy, EC),
+    aggregate_all(count, certain(enemy, _), EC),
+    !.
+update_enemies(steps) :-
     agent_position(AP),
     adjacent(AP, P, _),
     maybe_valid_position(P),
     \+ certain(no_enemy, P),
-    assert_new(possible_position(enemy, P)),
+    assert_new(possible_position(enemy, P, AP)),
     fail.
 update_enemies(steps).
 
@@ -744,11 +771,16 @@ update_pits(no_breeze) :-
 update_pits(no_breeze).
 
 update_pits(breeze) :-
+    % If already found all pits
+    world_count(pit, PC),
+    aggregate_all(count, certain(pit, _), PC),
+    !.
+update_pits(breeze) :-
     agent_position(AP),
     adjacent(AP, P, _),
     maybe_valid_position(P),
     \+ certain(no_pit, P),
-    assert_new(possible_position(pit, P)),
+    assert_new(possible_position(pit, P, AP)),
     fail.
 update_pits(breeze).
 
@@ -773,11 +805,16 @@ update_teleporter(no_flash) :-
 update_teleporter(no_flash) :- !.
 
 update_teleporter(flash) :-
+    % If already found all pits
+    world_count(teleporter, TC),
+    aggregate_all(count, certain(teleporter, _), TC),
+    !.
+update_teleporter(flash) :-
     agent_position(AP),
     adjacent(AP, P, _),
     maybe_valid_position(P),
     \+ certain(no_teleporter, P),
-    assert_new(possible_position(teleporter, P)),
+    assert_new(possible_position(teleporter, P, AP)),
     fail.
 update_teleporter(flash).
 
@@ -795,7 +832,7 @@ update_glow(Glow) :-
 update_gold(glow) :-
     agent_position(AP),
     assert_new(certain(gold, AP)),
-    format('~t~2|gold position: ~w~n', [AP]).
+    log('~t~2|gold position: ~w~n', [AP]).
 update_gold(no_glow) :-
     agent_position(AP),
     % Retract in case we collected gold from this position
@@ -815,7 +852,7 @@ update_impact(impact) :-
     adjacent(AP, PrevPos, Backwards),
     retractall(agent_position(_)),
     assertz(agent_position(PrevPos)),
-    format('~t~2|agent position: ~w~n', [PrevPos]),
+    log('~t~2|agent position: ~w~n', [PrevPos]),
     % Learn cave bounds
     learn_cave_bounds.
 
@@ -827,44 +864,108 @@ update_scream(scream) :-
     facing(Dir),
     adjacent(AP, P, Dir),
     maybe_valid_position(P),
-    learn(no_enemy, P),
-    learn(no_teleporter, P).
+    learn(killed_enemy, P).
 
 
 % learn/2
 % learn(+Item, +Location)
 learn(no_enemy, P) :-
-    retractall(possible_position(enemy, P)),
+    retractall(possible_position(enemy, P, _)),
     retractall(certain(enemy, P)),
     assert_new(certain(no_enemy, P)).
 learn(enemy, P) :-
-    retractall(possible_position(_, P)),
-    assert_new(certain(enemy, P)).
+    retractall(possible_position(_, P, _)),
+    assert_new(certain(enemy, P)),
+    check_count(enemy).
 learn(no_teleporter, P) :-
-    retractall(possible_position(teleporter, P)),
+    retractall(possible_position(teleporter, P, _)),
     retractall(certain(teleporter, P)),
     assert_new(certain(no_teleporter, P)).
 learn(teleporter, P) :-
-    retractall(possible_position(_, P)),
-    assert_new(certain(teleporter, P)).
+    retractall(possible_position(_, P, _)),
+    assert_new(certain(teleporter, P)),
+    check_count(teleporter).
 learn(no_pit, P) :-
-    retractall(possible_position(pit, P)),
+    retractall(possible_position(pit, P, _)),
     assert_new(certain(no_pit, P)).
 learn(pit, P) :-
-    retractall(possible_position(_, P)),
-    assert_new(certain(pit, P)).
+    retractall(possible_position(_, P, _)),
+    assert_new(certain(pit, P)),
+    check_count(pit).
 learn(safe, P) :-
     % Do nothing if already known to be safe
     certain(safe, P),
     !.
 learn(safe, P) :-
     member(Danger, [enemy, pit, teleporter]),
-    retractall(possible_position(Danger, P)),
+    retractall(possible_position(Danger, P, _)),
     fail.
 learn(safe, P) :-
     assert_new(certain(safe, P)),
-    format('~t~2|safe: ~w~n', [P]).
+    log('~t~2|safe: ~w~n', [P]).
+learn(killed_enemy, P) :-
+    % If killed normal enemy
+    certain(enemy, P),
+    adjacent(P, N, _),
+    % Retract steps observations and mark as not visited, as steps could be
+    % from another enemy
+    retractall(certain(steps, N)),
+    retractall(certain(visited, N)),
+    % Retract possible enemy positions caused by these steps
+    retractall(possible_position(enemy, _, N)),
+    fail.
+learn(killed_enemy, P) :- certain(enemy, P),
+    retractall(certain(enemy, P)),
+    !.
+learn(killed_enemy, P) :-
+    % If killed teleporter
+    adjacent(P, N, _),
+    % Retract flash observations and mark as not visited, as flash could be
+    % from another teleporter
+    retractall(certain(flash, N)),
+    retractall(certain(visited, N)),
+    % Retract possible teleporter positions caused by this flash
+    retractall(possible_position(teleporter, _, N)),
+    fail.
+learn(killed_enemy, P) :-
+    retractall(certain(teleporter, P)),
+    !.
 
+learn_no_more_enemies :-
+    possible_position(enemy, P, _),
+    learn(no_enemy, P),
+    fail.
+learn_no_more_enemies.
+
+learn_no_more_teleporters :-
+    possible_position(teleporter, P, _),
+    learn(no_teleporter, P),
+    fail.
+learn_no_more_teleporters.
+
+learn_no_more_pits :-
+    possible_position(pit, P, _),
+    learn(no_pit, P),
+    fail.
+learn_no_more_pits.
+
+check_count(enemy) :-
+    world_count(enemy, ExistingEnemiesCount),
+    aggregate_all(count, certain(enemy, _), ExistingEnemiesCount),
+    learn_no_more_enemies.
+check_count(enemy).
+
+check_count(teleporter) :-
+    world_count(teleporter, ExistingTeleporterCount),
+    aggregate_all(count, certain(teleporter, _), ExistingTeleporterCount),
+    learn_no_more_teleporters.
+check_count(teleporter).
+
+check_count(pit) :-
+    world_count(pit, ExistingPitsCount),
+    aggregate_all(count, certain(pit, _), ExistingPitsCount),
+    learn_no_more_pits.
+check_count(pit).
 
 learn_cave_bounds :-
     facing(east),
@@ -900,39 +1001,39 @@ learn_cave_bounds :-
 
 review_lt_min_x_assumptions :-
     certain(minX, MinX),
-    format('X >= ~w~n', [MinX]),
-    (possible_position(_, (X, _)) ; certain(_, (X, _))),
+    log('~t~2|X >= ~w~n', [MinX]),
+    (possible_position(_, (X, _), _) ; certain(_, (X, _))),
     X < MinX,
-    retractall(possible_position(_, (X, _))),
+    retractall(possible_position(_, (X, _), _)),
     retractall(certain(_, (X, _))),
     fail.
 review_lt_min_x_assumptions.
 
 review_lt_min_y_assumptions :-
     certain(minY, MinY),
-    format('Y >= ~w~n', [MinY]),
-    (possible_position(_, (_, Y)) ; certain(_, (_, Y))),
+    log('~t~2|Y >= ~w~n', [MinY]),
+    (possible_position(_, (_, Y), _) ; certain(_, (_, Y))),
     Y < MinY,
-    retractall(possible_position(_, (_, Y))),
+    retractall(possible_position(_, (_, Y), _)),
     retractall(certain(_, (_, Y))),
     fail.
 review_lt_min_y_assumptions.
 
 review_gt_max_x_assumptions :-
     certain(maxX, MaxX),
-    format('X <= ~w~n', [MaxX]),
-    (possible_position(_, (X, _)) ; certain(_, (X, _))),
+    log('~t~2|X <= ~w~n', [MaxX]),
+    (possible_position(_, (X, _), _) ; certain(_, (X, _))),
     X > MaxX,
-    retractall(possible_position(_, (X, _))),
+    retractall(possible_position(_, (X, _), _)),
     fail.
 review_gt_max_x_assumptions.
 
 review_gt_max_y_assumptions :-
     certain(maxY, MaxY),
-    format('Y <= ~w~n', [MaxY]),
-    (possible_position(_, (_, Y)) ; certain(_, (_, Y))),
+    log('~t~2|Y <= ~w~n', [MaxY]),
+    (possible_position(_, (_, Y), _) ; certain(_, (_, Y))),
     Y > MaxY,
-    retractall(possible_position(_, (_, Y))),
+    retractall(possible_position(_, (_, Y), _)),
     fail.
 review_gt_max_y_assumptions.
 
@@ -1090,10 +1191,6 @@ ask_goal_KB(leave) :-
 ask_goal_KB(reach(Pos)) :-
     next_position_to_explore(Pos),
     !.
-    % certain(safe, Pos),
-    % maybe_valid_position(Pos),
-    % \+certain(visited, Pos),
-    % !.
 
 ask_goal_KB(kill(EnemyPos)) :-
     % If unable to explore new positions, find an enemy in the frontier and kill it
@@ -1175,9 +1272,9 @@ unknown(Pos) :-
     \+certain(enemy, Pos),
     \+certain(teleporter, Pos),
     \+certain(pit, Pos),
-    \+possible_position(enemy, Pos),
-    \+possible_position(teleporter, Pos),
-    \+possible_position(pit, Pos),
+    \+possible_position(enemy, Pos, _),
+    \+possible_position(teleporter, Pos, _),
+    \+possible_position(pit, Pos, _),
     !.
 
 %
@@ -1216,7 +1313,7 @@ next_action(reach(Pos), Action) :-
     % If goal is to reach a position and the agent is not next to the position
     % try to reach an adjacent position
     agent_position(AP),
-    a_star(AP, Pos, [Next | _]),
+    a_star(AP, Pos, a_star_heuristic, a_star_extend, [Next | _]),
     next_action(reach(Next), Action),
     !.
 next_action(leave, step_out) :-
@@ -1269,126 +1366,9 @@ perform_action(pick_up) :-
     world_pick_up.
 perform_action(step_out). % Nothing to do
 perform_action(shoot) :-
-    format('SHOOT~n'),
     world_shoot,
     !.
 
-% bfs/3
-% bfs(+Origin, +Goal, -Path)
-% Runs a bfs from a safe node to a possibly unsafe node, using a visited path
-bfs(Origin, Goal, Path) :-
-    reverse_bfs(Goal, [[Origin]], S),
-    reverse(S, [Origin | Path]),
-    !.
-
-% reverse_bfs/3
-% reverse_bfs(+Goal, +PathsQueue, -Path)
-% Starts with PathsQueue as [[Origin]] and expands a bfs. When done, Path
-% is the path from Goal to Origin (the reverse path from origin to Goal).
-reverse_bfs(Goal, [[Goal | Path] | _], [Goal | Path]).
-reverse_bfs(Goal, [CurrentPath | QueuedPaths], Solution) :-
-    bfs_extend(CurrentPath, Goal, CurrentPathExtended),
-    append(QueuedPaths, CurrentPathExtended, NewQueue),
-    reverse_bfs(Goal, NewQueue, Solution).
-reverse_bfs(Goal, [_ | QueueTail], Solution) :-
-    % If bfs_extend fails in the previous case,
-    % then the first path does not lead to the Goal and cannot be further extended,
-    % so drop it from the queue.
-    reverse_bfs(Goal, QueueTail, Solution).
-
-% bfs_extend/3
-% bfs_extend(+Path, +Goal, -ExtendedPaths)
-% Extends a known Path with its valid neighbours. An adjacent cell is included
-% in the path if it is visited or if it is the goal.
-bfs_extend([Origin | Path], Goal, ExtendedPaths)  :-
-    setof(
-        [Next, Origin | Path],
-        Next^Dir^Goal^(
-            adjacent(Origin, Next, Dir),
-            \+ member(Next, [Origin | Path]),
-            maybe_valid_position(Next),
-            (Next = Goal ; certain(visited, Next))
-        ),
-        ExtendedPaths
-    ),
-    !.
-
-% a_star/3
-% a_star(+Origin, +Goal, -Path)
-% Runs an a-star-like algorithm from a safe node to a possibly unsafe node, using a visited path
-a_star(Origin, Goal, Path) :-
-    a_star_heuristic(Origin, Goal, StartH),
-    reverse_a_star(Goal, [([Origin], StartH)], S),
-    reverse(S, [Origin | Path]),
-    !.
-
-% reverse_a_star/3
-% reverse_a_star(+Goal, +Queue, -Path)
-% Runs an a-star-like algorithm and returns the reversed best path to the Goal.
-% The first call receives [([Origin], Heuristic)] as the Queue, where Heuristic is
-% the estimated cost from Origin to Goal.
-reverse_a_star(Goal, [([Goal | Path], _) | _], [Goal | Path]).
-reverse_a_star(Goal, [(CurrentPath, _) | QueuedPaths], Solution) :-
-    a_star_extend(CurrentPath, Goal, CurrentPathExtended),
-    a_star_push_all(QueuedPaths, CurrentPathExtended, NewQueue),
-    reverse_a_star(Goal, NewQueue, Solution).
-reverse_a_star(Goal, [_ | QueueTail], Solution) :-
-    % If a_star_extend fails in the previous case,
-    % then the first path does not lead to the Goal and cannot be further extended,
-    % so drop it from the queue.
-    reverse_a_star(Goal, QueueTail, Solution).
-
-% a_star_push/3
-% a_star_push(+PathPair, +Frontier, -NewFrontier)
-% PathPair is a tuple (Path, TotalEstimatedPathCost)
-% Pushes a PathPair to the Frontier keeping it sorted by estimated cost
-a_star_push((Nodes, EstCost), [], [(Nodes, EstCost)]) :- !.
-a_star_push(
-    (Nodes, EC),
-    [(FirstNodes, EC_f) | FrontierTail], [(Nodes, EC), (FirstNodes, EC_f) | FrontierTail]
-) :-
-    EC < EC_f,
-    !.
-a_star_push((Nodes, EstCost), [FirstNodePair | FrontierTail], [FirstNodePair | NewTail]) :-
-    a_star_push((Nodes, EstCost), FrontierTail, NewTail),
-    !.
-
-% a_star_push_all/3
-% a_star_push_all(+PathPairList, +Frontier, -NewFrontier)
-% PathPairList is list of tuples (Path, TotalEstimatedPathCost)
-% Pushes each PathPair to the Frontier keeping it sorted by estimated cost
-a_star_push_all([], Frontier, Frontier).
-a_star_push_all([FirstPair | PathPais], Frontier, NewFrontier) :-
-    a_star_push(FirstPair, Frontier, PartialFrontier),
-    a_star_push_all(PathPais, PartialFrontier, NewFrontier),
-    !.
-
-% a_star_extend/3
-% a_star_extend(+Path, +Goal, -ExtendedPathPairs)
-% ExtendedPathPairs is a list of tuples (Path, EstimatedCost) that includes the
-% new paths reacheable from Origin
-a_star_extend([Origin | Path], Goal, ExtendedPathPairs)  :-
-    setof(
-        ([Next, Origin | Path], EstCost),
-        Next^Dir^Goal^(
-            adjacent(Origin, Next, Dir),
-            \+ member(Next, [Origin | Path]),
-            maybe_valid_position(Next),
-            (Next = Goal ; certain(visited, Next)),
-            a_star_path_heuristic([Next, Origin | Path], Goal, EstCost)
-        ),
-        ExtendedPathPairs
-    ),
-    !.
-
-% a_star_path_heuristic/3
-% a_star_path_heuristic(+Path, +Goal, -EstCost)
-% Returns the known path cost plus the heuristic from the current Path end to the Goal
-a_star_path_heuristic([Next | Path], Goal, EstCost) :-
-    length(Path, L),
-    a_star_heuristic(Next, Goal, H),
-    EstCost is L + H,
-    !.
 
 % a_star_heuristic/3
 % a_star_heuristic(+Origin, +Goal, -EstCost)
@@ -1396,6 +1376,10 @@ a_star_path_heuristic([Next | Path], Goal, EstCost) :-
 a_star_heuristic((X0, Y0), (X1, Y1), H) :-
     H is abs(Y1 - Y0) + abs(X1 - X0).
 
+a_star_extend(Goal, Origin, Next) :-
+    adjacent(Origin, Next, _),
+    maybe_valid_position(Next),
+    (Next = Goal ; certain(safe, Next)).
 
 
 % frontier_count/4
@@ -1416,7 +1400,7 @@ frontier_extend(Pos, Dir, Steps, Reacheable) :-
     delete(R1, Pos, Reacheable),
     !.
 
-% frontier_extend(Pos, Dir, Steps, Reacheable)
+% frontier_extend_(+Pos, +Dir, +Steps, -Reacheable)
 frontier_extend_(Pos, _, 0, R) :-
     (   maybe_valid_position(Pos)
     ->  R = [Pos]
@@ -1438,11 +1422,10 @@ frontier_extend_(_, _, _, []).
 
 % For testing only
 % Runs the algorithm until finding a gold position
-run_until_pickup_or_shoot :-
+run_until_done :-
     sense_learn_act(G, A),
-    format('G = ~w~nA = ~w~n', [G, A]),
-    print_cave,
-    A \= pick_up,
-    A \= shoot,
-    run_until_pickup_or_shoot,
+    log('G = ~w~nA = ~w~n', [G, A]),
+    A \= step_out,
+    run_until_done,
     !.
+run_until_done.
