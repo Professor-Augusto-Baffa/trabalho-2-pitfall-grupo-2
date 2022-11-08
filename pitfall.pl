@@ -314,6 +314,7 @@ agent_power_up :-
 % 3. Getting killed by an enemy: -1000
 % 4. Being attacked by an enemy: -{dammage}
 % 5. Shooting: -10
+% 6. Other Actions (moving, turning, etc): -1
 
 % initial_game_score/1
 % Inicialize game score
@@ -376,6 +377,14 @@ attacked_score(Damage) :-
 shooting_score :-
     get_game_score(OldScore),
     (NewScore is integer(OldScore)-10),
+    update_game_score(NewScore),
+    !.
+
+% gen_action_score/0
+% For general actions such as moving, etc -> -1 point
+gen_action_score :-
+    get_game_score(OldScore),
+    (NewScore is integer(OldScore)-1),
     update_game_score(NewScore),
     !.
 
