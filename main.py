@@ -205,7 +205,7 @@ class App:
         self.player2_display.set_window(self.window)
 
         self.text_to_display = "Sensores: Nenhum alerta"
-        self.text_sensors = display.Text(self.text_to_display, [1000,button_v_pos],24)
+        self.text_sensors = display.Text(self.text_to_display, [600,button_v_pos],24)
         self.text_sensors.set_window(self.window)
 
         self.tempo_total = 0
@@ -213,25 +213,17 @@ class App:
         self.timer = display.Text(self.jornada_string + str(self.tempo_total), (30, timer_v_pos), timer_font_size)
         self.timer.set_window(self.window)
 
-        self.go_button = display.Button('Iniciar', (25, button_v_pos), (100, button_height), on_click=self.start_search)
+        self.go_button = display.Button('Iniciar', (25, button_v_pos), (100, button_height), on_click=self.change_auto_path)
         self.go_button.set_window(self.window)
 
-        self.stop_button = display.Button('Parar', (150, button_v_pos), (100, button_height), on_click=self.stop_search)
-        self.stop_button.set_window(self.window)
-
-        self.step_button = display.Button('Step', (275, button_v_pos), (100, button_height), on_click=self.step_search)
-        self.step_button.set_window(self.window)
-
-        self.reset_button = display.Button('Zerar', (400, button_v_pos), (100, button_height), on_click=self.reset_search)
-        self.reset_button.set_window(self.window)
-
-        self.move_up_button = display.Button('Forward',(600,button_v_pos),(100,button_height),on_click=self.reset_search)
+        self.move_up_button = display.Button('Forward',(150,button_v_pos),(100,button_height),on_click=self.move_players)
         self.move_up_button.set_window(self.window)
         
-        self.move_down_button = display.Button('Rotate',(700,button_v_pos),(100,button_height),on_click=self.rotate_players)
+        self.move_down_button = display.Button('Rotate',(275,button_v_pos),(100,button_height),on_click=self.rotate_players)
         self.move_down_button.set_window(self.window)
+
         self.auto_path = False
-        self.move_down_button = display.Button('Executa Ação',(800,button_v_pos),(100,button_height),on_click=self.change_auto_path)
+        self.move_down_button = display.Button('Executa Ação',(400,button_v_pos),(100,button_height),on_click=self.execute_querry)
         self.move_down_button.set_window(self.window)   
 
         self.path_finder = PathFinder(
