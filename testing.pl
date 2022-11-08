@@ -1,7 +1,8 @@
 
 :- dynamic([
     health/3,
-    agent_health/2
+    agent_health/2,
+    game_score/1
 ]).
 
 world_position(small_enemy, (2, 9)).
@@ -64,22 +65,49 @@ update_agent_health(Character, NewHealth) :-
     !.
 
 
-% initial_health(small_enemy, 100).
-% initial_health(large_enemy, 100).
+% 
+% Score System: Costs and Rewards
+% ------
+% 1. Pick up: +1000
+% 2. Falling in a pit: -1000
+% 3. Getting killed by an enemy: -1000
+% 4. Being attacked by an enemy: -{dammage}
+% 5. Shooting: -10
 
-% health((2, 3), 70).
+% initial_game_score/1
+% Inicialize game score
+initial_game_score(0).
 
-% get_health(Pos, Health) :-
-%     health(Pos, Health),
-%     !.
-% get_health(Pos, Health) :-
-%     world_position(Character, Pos),
-%     initial_health(Character, Health),
-%     assertz(health(Pos, Health)),
-%     !.
+% get_game_score/1
+% Get the game's score
+get_game_score(Score) :-
+    game_score(Score),
+    !.
+get_game_score(Score) :-
+    initial_game_score(Score),
+    assertz(game_score(Score)),
+    !.
 
-% update_health(Pos, NewHealth) :-
-%     get_health(Pos, OldHealth),
-%     retractall(health(Pos, _)),
-%     assertz(health(Pos, NewHealth)),
-%     !.
+% update_game_score/1
+% Update the game's score
+update_game_score(NewScore) :-
+    get_game_score(OldScore),
+    retractall(game_score),
+    assertz(game_score(NewScore)),
+    !.
+
+% Rules for costs and rewards
+% pick_up/0, pit_fall/0, killed/0, attacked/1, shooting/0
+% pick_up :- update_game_score(1000).
+% pit_fall :- update_game_score(-1000).
+% killed :- update_score(-1000).
+% attacked(Damage) :- update_score(Damage).
+% shooting :- update_score(-10).
+
+
+%
+% TODO: Attack System
+% ----
+
+% Ammo damage: random between 20 and 50
+% Ammo count: 5
