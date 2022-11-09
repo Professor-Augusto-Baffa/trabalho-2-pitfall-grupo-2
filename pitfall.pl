@@ -15,6 +15,21 @@
 % 4. Being attacked by an enemy: -{dammage}
 % 5. Shooting: -10
 
+:- module(pitfall, [
+    sense/1,
+    learn/3,
+    act/1,
+    sense_learn_act/2,
+    print_cave/0,
+    disable_logging/0,
+    enable_logging/0,
+    force_update_position/1,
+    certain/2,
+    run_until_done/0,
+    get_agent_health/1,
+    get_game_score/1
+]).
+
 :- use_module(a_star).
 :- use_module(logging).
 
@@ -31,9 +46,11 @@
     collected/2,
     game_score/1,
     health/3,
-    agent_health/2,
+    agent_health/1,
     inventory/3
 ]).
+
+:- enable_logging.
 
 % assert_new/1
 % assert_new(+Term)
@@ -143,7 +160,15 @@ print_cave :-
     Line is MaxY - Y + 1,
     print_cave_line(Line),
     fail.
-print_cave.
+print_cave :-
+    get_agent_health(H),
+    get_game_score(S),
+    get_inventory(A, P),
+    NP is 3 - P,
+    collected(gold, G),
+    log('Health: ~t~w~nScore: ~t~w~nAmmo: ~t~w~nGold: ~t~w~nPower ups: ~t~w~n',
+        [H, S, A, G, NP]
+    ).
 print_cave_line(Y) :-
     minX(MinX), maxX(MaxX),
     between(MinX, MaxX, X),
@@ -269,63 +294,56 @@ update_health(Pos, Character, NewHealth) :-
 update_health(Pos, Character, _) :-
     retractall(health(Pos, Character, _)),
     assertz(health(Pos, Character, 0)),
-    character_killed,
+    character_killed(Character, Pos),
     !.
 
-% character_killed/0
+% character_killed/1
 % Called when character's (except agent) HP reaches 0
-% TODO: Join with map update when enemy is killed
-character_killed :-
-    write('Character killed!'),
+character_killed(EnemyType, EnemyPos) :-
+    log('Character killed!~n'),
+    retractall(world_position(EnemyType, EnemyPos)),
+    (   EnemyType = teleporter
+    ->  CountType = teleporter
+    ;   CountType = enemy
+    ),
+    world_count(CountType, C),
+    NC is C - 1,
+    retractall(world_count(CountType, _)),
+    assertz(world_count(CountType, NC)),
+    assertz(killed_enemy),
     !.
 
-% get_agent_health/2
+% get_agent_health/1
 % Get agent's health
 % If agent's health hasn't been tracked yet, initialize new health
-get_agent_health(Character, Health) :-
-    agent_health(Character, Health),
+get_agent_health(Health) :-
+    agent_health(Health),
     !.
-get_agent_health(Character, Health) :-
-    initial_health(Character, Health),
-    assertz(agent_health(Character, Health)),
+get_agent_health(Health) :-
+    initial_health(agent, Health),
+    assertz(agent_health(Health)),
     !.
 
-% update_agent_health/2
+% update_agent_health/1
 % Update agent's health
 % When NewHealth <= 0, agent is killed, game over!
-update_agent_health(Character, NewHealth) :-
+update_agent_health(NewHealth) :-
     (NewHealth > 0),
-    retractall(agent_health(Character, _)),
-    assertz(agent_health(Character, NewHealth)),
+    retractall(agent_health(_)),
+    assertz(agent_health(NewHealth)),
     !.
-update_agent_health(Character, _) :-
-    retractall(agent_health(Character, _)),
-    assertz(agent_health(Character, 0)),
+update_agent_health(_) :-
+    retractall(agent_health(_)),
+    assertz(agent_health(0)),
     agent_killed,
     !.
 
 % agent_killed/0
 % Called when agent's HP reaches zero, game over!
-% TODO: Call Python to call Game Over
 agent_killed :-
     killed_score,
-    write('You died! Game over!'),
-    !.
-
-% agent_power_up/0
-% Rule for updating health with +20 HP when agent collects power up
-% Only 3 available + has to match agent's position
-% TODO: Verify agent's position
-agent_power_up :-
-    get_inventory(_, PowerUps),
-    (PowerUps > 0), 
-    use_power_up,
-    get_agent_health(agent, OldHealth),
-    (NewHealth is integer(OldHealth)+20),
-    update_agent_health(agent, NewHealth),
-    !.
-agent_power_up :-
-    write('No power up available!').
+    log('You died! Game over!~n'),
+    fail.
 
 
 % 
@@ -367,14 +385,6 @@ update_game_score(_).
 pick_up_score :-
     get_game_score(OldScore),
     (NewScore is 1000+integer(OldScore)),
-    update_game_score(NewScore),
-    !.
-
-% pit_fall/0
-% Fall into Pit -> -1000 points
-pit_fall_score :-
-    get_game_score(OldScore),
-    (NewScore is integer(OldScore)-1000),
     update_game_score(NewScore),
     !.
 
@@ -456,6 +466,8 @@ use_power_up :-
     get_inventory(Ammo, OldPowerUps),
     (NewPowerUps is integer(OldPowerUps)-1),
     update_inventory(Ammo, NewPowerUps),
+    world_position(agent, AP),
+    retractall(world_position(power_up, AP)),
     !.
 
 
@@ -468,35 +480,89 @@ use_power_up :-
 % Ammo damage: random between 20 and 50
 % Ammo count: 5
 
-% TODO: Precisamos verificar aqui se o inimigo pode atacar o agente (pela posicao do inimigo)?
+% receive_effects/0
+receive_effects :-
+    log('Effects:~n'),
+    agent_power_up,
+    small_enemy_attacks,
+    big_enemy_attacks,
+    teleport_attack,
+    fall_in_pit.
+
+
+% agent_power_up/0
+% Rule for updating health with +20 HP when agent collects power up
+% Only 3 available + has to match agent's position
+agent_power_up :-
+    world_position(agent, AP),
+    world_position(power_up, AP),
+    use_power_up,
+    get_agent_health(OldHealth),
+    (NewHealth is integer(OldHealth)+20),
+    !,
+    update_agent_health(NewHealth).
+agent_power_up :-
+    log('~t~2|No power up available!~n').
 
 % small_enemy_attacks/0
 %
 % 1. game score -> -20 points
 % 2. agent health -> -20 points
 small_enemy_attacks :-
+    % If the agent is at an enemy's position
+    world_position(agent, AP),
+    world_position(small_enemy, AP),
+    % Decrease the score
     attacked_score(20),
-    get_agent_health(agent, OldHealth),
+    % Decrease health
+    get_agent_health(OldHealth),
     (NewHealth is integer(OldHealth)-20),
-    update_agent_health(agent, NewHealth),
-    !.
+    !,
+    update_agent_health(NewHealth),
+    log('~t~2|Attacked by a small enemy!~n').
+small_enemy_attacks.
 
 % big_enemy_attacks/0
 % 
 % 1. game score -> -50 points
 % 2. agent health = -50 points
 big_enemy_attacks :-
+    % If the agent is at an enemy's position
+    world_position(agent, AP),
+    world_position(large_enemy, AP),
+    % Decrease the score
     attacked_score(50),
-    get_agent_health(agent, OldHealth),
+    % Decrease health
+    get_agent_health(OldHealth),
     (NewHealth is integer(OldHealth)-50),
-    update_agent_health(agent, NewHealth),
-    !.
+    !,
+    update_agent_health(NewHealth),
+    log('~t~2|Attacked by a big enemy!~n').
+big_enemy_attacks.
 
 % teleport_attack/0
 % Enemy attacks with teleport
-% teleport_attack :-
-%     ???
-%     !.
+teleport_attack :-
+    world_position(agent, AP),
+    world_position(teleporter, AP),
+    % Find new position
+    minX(MinX), maxX(MaxX), minY(MinY), maxY(MaxY),
+    random_between(MinX, MaxX, X),
+    random_between(MinY, MaxY, Y),
+    % Update world position
+    retractall(world_position(agent, _)),
+    assertz(world_position(agent, (X, Y))),
+    retractall(agent_position(_)),
+    log('~t~2|Attacked by a teleporter!~n'),
+    !.
+teleport_attack.
+
+fall_in_pit :-
+    world_position(agent, AP),
+    world_position(pit, AP),
+    !,
+    update_agent_health(0).
+fall_in_pit.
 
 % agent_attacks/2
 % Damage is a random number between 20 and 50
@@ -515,7 +581,7 @@ agent_attacks(EnemyPos, Enemy) :-
     update_health(EnemyPos, Enemy, NewHealth),
     !.
 agent_attacks(_,_) :-
-    write('Agent attack on enemy failed!'),
+    log('Agent attack on enemy failed!~n'),
     !.
 
 %
@@ -527,16 +593,32 @@ agent_attacks(_,_) :-
 % Learns from the environment and acts accordingly, returning the current Goal and the Action it performed
 sense_learn_act(Goal, Action) :-
     log('-----~n'),
-    sense_environment(Sensors), write_sensors(Sensors),
-    clear_transient_flags,
+    sense(Sensors),
     log('Learning:~n'),
-    update_knowledge(Sensors),
-    update_goal,
-    goal(Goal),
-    next_action(Goal, Action),
+    learn(Sensors, Goal, Action),
     print_cave,
-    perform_action(Action),
-    !.
+    log('Goal: ~w~nAction: ~w~n', [Goal, Action]),
+    act(Action).
+
+% sense/1
+% sense(-Sensors)
+sense(Sensors) :-
+    receive_effects,
+    sense_environment(Sensors),
+    write_sensors(Sensors).
+
+% learn/3
+% learn(+Sensors, -Goal, -Action)
+learn(Sensors, Goal, Action) :-
+    update_knowledge(Sensors),
+    update_goal(Goal),
+    next_action(Goal, Action).
+
+% act/1
+% act(+Action)
+act(Action) :-
+    clear_transient_flags,
+    perform_action(Action).
 
 
 % Sensors
@@ -652,43 +734,21 @@ world_shoot :-
     world_position(agent, AP),
     facing(Dir),
     adjacent(AP, EnemyPos, Dir),
-    % TODO implement damage. For now, only remove the enemy
-    (   world_position(small_enemy, EnemyPos)
-    ->  (   retractall(world_position(small_enemy, EnemyPos)),
-            world_count(enemy, C),
-            NC is C - 1,
-            retractall(world_count(enemy, _)),
-            assertz(world_count(enemy, NC))
-        )
-    ;   world_position(large_enemy, EnemyPos)
-    ->  (   retractall(world_position(large_enemy, EnemyPos)),
-            world_count(enemy, C),
-            NC is C - 1,
-            retractall(world_count(enemy, _)),
-            assertz(world_count(enemy, NC))
-        )
-    ;   world_position(teleporter, EnemyPos)
-    ->  (   retractall(world_position(teleporter, EnemyPos)),
-            world_count(teleporter, C),
-            NC is C - 1,
-            retractall(world_count(teleporter, _)),
-            assertz(world_count(teleporter, NC))
-        )
-    ),
-    assertz(killed_enemy),
+    world_position(EnemyType, EnemyPos),
+    agent_attacks(EnemyPos, EnemyType),
     !.
 
 world_pick_up :-
     % If on the same position as gold, remove gold from the world
     world_position(agent, AP),
     world_position(gold, AP),
+    pick_up_score,
     retractall(world_position(gold, AP)).
 
 clear_transient_flags :-
     retractall(hit_wall),
     retractall(killed_enemy).
 
-% TODO: invalidate observations around a killed enemy
 
 %
 % Update knowledge
@@ -914,11 +974,9 @@ learn(killed_enemy, P) :-
     % Retract possible enemy positions caused by these steps
     retractall(possible_position(enemy, _, N)),
     fail.
-learn(killed_enemy, P) :- certain(enemy, P),
-    retractall(certain(enemy, P)),
-    !.
 learn(killed_enemy, P) :-
     % If killed teleporter
+    certain(teleporter, P),
     adjacent(P, N, _),
     % Retract flash observations and mark as not visited, as flash could be
     % from another teleporter
@@ -928,7 +986,10 @@ learn(killed_enemy, P) :-
     retractall(possible_position(teleporter, _, N)),
     fail.
 learn(killed_enemy, P) :-
+    retractall(certain(enemy, P)),
+    assertz(certain(no_enemy, P)),
     retractall(certain(teleporter, P)),
+    assertz(certain(no_teleporter, P)),
     !.
 
 learn_no_more_enemies :-
@@ -1042,7 +1103,6 @@ review_gt_max_y_assumptions.
 % Used for enemies, teleporters and pits.
 % Eg. If there were steps at one cell with 4 neighbors and the agent is certain that 3
 % of those have no enemies, than the enemy has to be on the fourth one.
-% TODO: Take into account the maximum number of enemies and certainties to infer possibilities
 infer_dangerous_positions :-
     % For each danger trio (Hint, NotThere, There)
     % e.g. (steps, no_enemy, enemy) or (breeze, no_pit, pit)
@@ -1135,45 +1195,51 @@ maybe_valid_max_y(_).
 % Update goal
 % -----------
 
-update_goal :-
-    % If the goal is to leave, don't change it
-    goal(leave).
-update_goal :-
-    % If the goal is to reach an invalid position, remove goal and backtrack
-    goal(reach(Pos)),
+% update_goal/1
+% update_goal(-NewGoal)
+update_goal(NewGoal) :-
+    goal(Goal),
+    update_goal(Goal, NewGoal),
+    !.
+update_goal(NewGoal) :-
+    update_goal(none, NewGoal).
+
+% update_goal/2
+% update_goal(+CurrGoal, -NewGoal)
+update_goal(leave, leave).
+update_goal(reach(Pos), NewGoal) :-
+    % If the goal is to reach an invalid position, remove goal and get a new one
     \+ maybe_valid_position(Pos),
     retractall(goal(_)),
-    fail.
-update_goal :-
-    % If the goal is to kill an enemy, and the enemy has been killed, remove goal and backtrack
-    goal(kill(Pos)),
+    update_goal(none, NewGoal).
+update_goal(kill(Pos), NewGoal) :-
+    % If the goal is to kill an enemy, and the enemy has been killed, remove goal and get a new one
     certain(no_enemy, Pos),
+    certain(no_teleporter, Pos),
     retractall(goal(_)),
-    fail.
-update_goal :-
+    update_goal(none, NewGoal).
+update_goal(kill(_), NewGoal) :-
+    % If the goal is to kill an enemy and there is no more ammo left, remove goal and get a new one
+    get_inventory(0, _),
+    retractall(goal(_)),
+    update_goal(none, NewGoal).
+update_goal(none, NewGoal) :-
     % If no goal, set a new one
-    \+ goal(_),
-    ask_goal_KB(Goal),
-    set_goal(Goal),
+    ask_goal_KB(NewGoal),
+    set_goal(NewGoal),
     !.
-update_goal :-
+update_goal(reach(Pos), NewGoal) :-
     % If goal is reach, and position is reached, get new goal
-    goal(reach(P)),
-    agent_position(P),
+    agent_position(Pos),
     retractall(goal(_)),
-    ask_goal_KB(Goal),
-    set_goal(Goal),
+    update_goal(none, NewGoal),
     !.
-update_goal :-
+update_goal(reach(Pos), reach(Pos)) :-
     % If goal is reach, and haven't reached yet, don't change goal
-    goal(reach(_)),
     !.
-update_goal :-
+update_goal(kill(Pos), kill(Pos)) :-
     % If the goal is to kill an enemy that hasn't been killed, keep it
-    goal(kill(_)),
     !.
-% For now, only `reach` goals. Later, if no cells are available and we are certain of enemy positions,
-% we could set a goal to kill an enemy at a given position to unblock new areas
 
 % set_goal/1
 % set_goal(+Goal)
@@ -1181,7 +1247,7 @@ set_goal(Goal) :-
     retractall(goal(_)),
     assertz(goal(Goal)).
 
-% TODO: implement goal choice
+
 ask_goal_KB(leave) :-
     % If collected all gold, leave the cave
     world_count(gold, GC),
@@ -1194,6 +1260,9 @@ ask_goal_KB(reach(Pos)) :-
 
 ask_goal_KB(kill(EnemyPos)) :-
     % If unable to explore new positions, find an enemy in the frontier and kill it
+    % Check if there is still ammo
+    get_inventory(Ammo, _),
+    Ammo \= 0,
     bagof(
         (Count, Distance, OneEnemyPos),
         AP^(
@@ -1346,24 +1415,30 @@ next_action(kill(EnemyPos), Action) :-
 
 % perform_action/1
 % perform_action(+Action)
+perform_action(_) :-
+    gen_action_score,
+    fail.
 perform_action(move_forward) :-
     facing(Direction),
     agent_position(AP),
     adjacent(AP, NP, Direction),
     retractall(agent_position(_)),
     assertz(agent_position(NP)),
-    world_step.
+    world_step,
+    !.
 perform_action(turn_clockwise) :-
     facing(Direction),
     clockwise(Direction, NewDirection),
     retractall(facing(_)),
-    assertz(facing(NewDirection)).
+    assertz(facing(NewDirection)),
+    !.
 perform_action(pick_up) :-
     collected(gold, Count),
     NewCount is Count + 1,
     retractall(collected(gold, _)),
     assertz(collected(gold, NewCount)),
-    world_pick_up.
+    world_pick_up,
+    !.
 perform_action(step_out). % Nothing to do
 perform_action(shoot) :-
     world_shoot,
@@ -1423,8 +1498,8 @@ frontier_extend_(_, _, _, []).
 % For testing only
 % Runs the algorithm until finding a gold position
 run_until_done :-
-    sense_learn_act(G, A),
-    log('G = ~w~nA = ~w~n', [G, A]),
+    sense_learn_act(_, A),
+    A \= shoot,
     A \= step_out,
     run_until_done,
     !.

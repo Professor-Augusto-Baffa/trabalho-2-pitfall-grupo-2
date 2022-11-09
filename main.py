@@ -260,10 +260,12 @@ class App:
     
     def execute_querry(self):
         #Resposta é um dicionario com Goal, Action e Sensors
+
         resposta = self.player.cerebro.faz_query("sense_learn_act(Goal,Action), sense_environment(Sensors), print_cave(), get_agent_health(agent, Health), get_game_score(Score), get_inventory(Ammo,PowerUps).")
         self.health = resposta["Health"]
         self.score = resposta["Score"]
         self.ammo = resposta["Ammo"]
+
         sensores = resposta["Sensors"].replace("(","")
         sensores = sensores.replace(")","")
         sensores = sensores.replace(" ","")
