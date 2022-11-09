@@ -261,12 +261,17 @@ class App:
     def execute_querry(self):
         #Resposta é um dicionario com Goal, Action e Sensors
 
-        resposta = self.player.cerebro.faz_query("sense_learn_act(Goal,Action), sense_environment(Sensors), print_cave(), get_agent_health(agent, Health), get_game_score(Score), get_inventory(Ammo,PowerUps).")
-        self.health = resposta["Health"]
-        self.score = resposta["Score"]
-        self.ammo = resposta["Ammo"]
+        resposta = self.player.cerebro.faz_query("sense_learn_act(Goal,Action).")
+        sensores = self.player.cerebro.faz_query(" sense(Sensors).")
+        self.player.cerebro.faz_query(" print_cave().")
+        vida = self.player.cerebro.faz_query(" get_agent_health(Health).")
+        pontuacao = self.player.cerebro.faz_query(" get_game_score(Score).")
+        inventario = self.player.cerebro.faz_query(" get_inventory(Ammo,PowerUps).")
+        self.health = vida["Health"]
+        self.score = pontuacao["Score"]
+        self.ammo = inventario["Ammo"]
 
-        sensores = resposta["Sensors"].replace("(","")
+        sensores = sensores["Sensors"].replace("(","")
         sensores = sensores.replace(")","")
         sensores = sensores.replace(" ","")
         sensores = sensores.replace(",,",",")
@@ -289,7 +294,7 @@ class App:
 
         self.score_display.text = "Vida:{health}   Score:{score}   Ammo:{ammo}  Gold:{gold}".format(health=self.health,score=self.score,ammo=self.ammo,gold=self.gold)
 
-        if resposta['Health'] <= 0:
+        if vida['Health'] <= 0:
             self.auto_path = False
             self.next_action = "Jogador morto"
             return

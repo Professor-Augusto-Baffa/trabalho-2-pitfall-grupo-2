@@ -27,7 +27,8 @@
     certain/2,
     run_until_done/0,
     get_agent_health/1,
-    get_game_score/1
+    get_game_score/1,
+    get_inventory/2
 ]).
 
 :- use_module(a_star).
