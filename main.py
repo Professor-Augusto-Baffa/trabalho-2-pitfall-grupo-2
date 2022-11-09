@@ -203,11 +203,12 @@ class App:
 
         self.next_action = display.Text("Ação: Nenhuma", [600,100],24)
         self.next_action.set_window(self.window)
-
-        self.tempo_total = 0
-        self.jornada_string = "Tempo da jornada: "
-        self.timer = display.Text(self.jornada_string + str(self.tempo_total), (30, timer_v_pos), timer_font_size)
-        self.timer.set_window(self.window)
+        self.score = 0
+        self.ammo = 0
+        self.gold = 0
+        self.health = 0
+        self.score_display = display.Text("Vida:{health}   Score:{score}   Ammo:{ammo}  Gold:{gold}".format(health=self.health,score=self.score,ammo=self.ammo,gold=self.gold), [600,150],24)
+        self.score_display.set_window(self.window)
 
         self.go_button = display.Button('Iniciar', (25, button_v_pos), (100, button_height), on_click=self.change_auto_path)
         self.go_button.set_window(self.window)
@@ -247,10 +248,6 @@ class App:
         self.path_displays.clear()
         self.path_finder.reset()
 
-    def update_time_text(self):
-        self.tempo_total = self.path_finder.get_accumulated_cost()
-        self.timer.text = self.jornada_string + str(self.tempo_total)
-    
     def move_players(self):
         self.player.move_forward()
 
@@ -263,8 +260,10 @@ class App:
     
     def execute_querry(self):
         #Resposta é um dicionario com Goal, Action e Sensors
-        resposta = self.player.cerebro.faz_query("sense_learn_act(Goal,Action), sense_environment(Sensors), print_cave(), get_agent_health(agent, Health), get_game_score(Score).")
-
+        resposta = self.player.cerebro.faz_query("sense_learn_act(Goal,Action), sense_environment(Sensors), print_cave(), get_agent_health(agent, Health), get_game_score(Score), get_inventory(Ammo,PowerUps).")
+        self.health = resposta["Health"]
+        self.score = resposta["Score"]
+        self.ammo = resposta["Ammo"]
         sensores = resposta["Sensors"].replace("(","")
         sensores = sensores.replace(")","")
         sensores = sensores.replace(" ","")
@@ -286,6 +285,8 @@ class App:
         else:
             self.text_sensors.text = "Sensores: Nenhum Alerta"
 
+        self.score_display.text = "Vida:{health}   Score:{score}   Ammo:{ammo}  Gold:{gold}".format(health=self.health,score=self.score,ammo=self.ammo,gold=self.gold)
+
         if resposta['Health'] <= 0:
             self.auto_path = False
             self.next_action = "Jogador morto"
@@ -302,6 +303,7 @@ class App:
 
         elif resposta['Action'] == "pick_up":
             self.next_action.text = "Ação: Pegar ouro"
+            self.gold += 1
 
         elif resposta['Action'] == "shoot":
             self.next_action.text = "Ação: Atacar"
@@ -312,15 +314,6 @@ class App:
         else:
             print("Ação não compreendida")
 
-    def update_map(self):
-        #fazer querry dos 5 pontos -> local e 4 em volta
-        pos = self.player.pos_matriz
-        query = "certain(Pos,({pos1},{pos2})).".format(pos1 = pos[0], pos2 = pos[1])
-        resposta = self.player.cerebro.faz_query(query)
-        print(resposta)
-        print(pos)
-        if resposta["Pos"] == "no_steps" or "no_enemy":
-            self.visaoDoJogador.change_tile(pos,".")
     ###############
     # Path Finder #
     ###############
@@ -359,7 +352,6 @@ class App:
                         if not self.is_path_finder_running:
                             break
                         self.path_finder.update()
-            self.update_time_text()
             self.window.process_events()
             self.window.display()
             if self.auto_path and self.retardo >= self.tempoDeRetardo:
